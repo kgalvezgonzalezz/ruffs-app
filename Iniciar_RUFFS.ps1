@@ -169,6 +169,22 @@ if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
         $BindHost = "0.0.0.0"
     }
 }
+
+# Actualizaciones: ajustes nuevos en un .env ya existente (el instalador lo
+# conserva). 1.1.3: el límite de rondas del agente pasa de 60 a 200 y aparece el
+# tope de gasto por mensaje. Solo se toca el valor antiguo por defecto.
+if (Test-Path ".env") {
+    $envPath = Join-Path $PSScriptRoot ".env"
+    $envText = [IO.File]::ReadAllText($envPath)
+    $envNew = $envText -replace '(?m)^RUFFS_AGENT_MAX_ROUNDS=60(\r?)$', 'RUFFS_AGENT_MAX_ROUNDS=200$1'
+    if ($envNew -notmatch '(?m)^RUFFS_AGENT_MAX_COST_USD=') {
+        $envNew = $envNew.TrimEnd() + "`r`n# Tope de gasto por mensaje en dólares (coste real de OpenRouter); 0 = sin tope.`r`nRUFFS_AGENT_MAX_COST_USD=1.0`r`n"
+    }
+    if ($envNew -ne $envText) {
+        [IO.File]::WriteAllText($envPath, $envNew, (New-Object Text.UTF8Encoding $false))
+        Write-Host "Ajustes del agente actualizados en .env (200 rondas, tope de 1 USD por mensaje)."
+    }
+}
 New-Item -ItemType Directory -Force "data" | Out-Null
 
 # 3b. Node.js portátil (copia instalada): lo usan el MCP de navegador y los

@@ -154,12 +154,15 @@ jobs:
           test -f "$APP/data/app.db"
           echo "mis chats y memorias" > "$APP/data/marca-actualizacion.txt"
           echo "# marca-actualizacion" >> "$APP/.env"
+          sed -i '' 's/^RUFFS_AGENT_MAX_ROUNDS=.*/RUFFS_AGENT_MAX_ROUNDS=60/; /^RUFFS_AGENT_MAX_COST_USD=/d' "$APP/.env"   # .env de una versión anterior
           count() { "$PY" -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(sum(c.execute(f'select count(*) from [{t}]').fetchone()[0] for (t,) in c.execute(\"select name from sqlite_master where type='table'\")))" "$APP/data/app.db"; }
           before="$(count)"
           echo "versión-anterior" > "$APP/RUFFS_BUILD"      # como si hubiera una versión vieja instalada
           bash dist/RUFFS.app/Contents/Resources/RUFFS.command
           grep -q "mis chats y memorias" "$APP/data/marca-actualizacion.txt"
           grep -q "marca-actualizacion" "$APP/.env"
+          grep -q '^RUFFS_AGENT_MAX_ROUNDS=200' "$APP/.env"
+          grep -q '^RUFFS_AGENT_MAX_COST_USD=1.0' "$APP/.env"
           ! grep -q "versión-anterior" "$APP/RUFFS_BUILD"   # el programa sí se reemplazó
           after="$(count)"
           echo "Filas en la base de datos: antes $before, después $after"
@@ -295,6 +298,9 @@ jobs:
           Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           Set-Content "$dir\data\marca-actualizacion.txt" "mis chats y memorias"
           Add-Content "$dir\.env" "# marca-actualizacion"
+          # Simula un .env de una versión anterior (60 rondas, sin tope de gasto).
+          $e = (Get-Content "$dir\.env" -Raw) -replace '(?m)^RUFFS_AGENT_MAX_ROUNDS=.*$', 'RUFFS_AGENT_MAX_ROUNDS=60' -replace '(?m)^RUFFS_AGENT_MAX_COST_USD=.*\r?\n?', ''
+          [IO.File]::WriteAllText("$dir\.env", $e)
           $countPy = Join-Path $env:RUNNER_TEMP "contar_filas.py"
           @'
           import sqlite3, sys
@@ -308,6 +314,8 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "La actualización terminó con código $($p.ExitCode)" }
           if ((Get-Content "$dir\data\marca-actualizacion.txt") -ne "mis chats y memorias") { throw "Se perdieron archivos de data\" }
           if (-not (Select-String "$dir\.env" -Pattern "marca-actualizacion" -Quiet)) { throw "La actualización sobrescribió .env" }
+          if (-not (Select-String "$dir\.env" -Pattern '^RUFFS_AGENT_MAX_ROUNDS=200' -Quiet)) { throw "No se migró RUFFS_AGENT_MAX_ROUNDS a 200" }
+          if (-not (Select-String "$dir\.env" -Pattern '^RUFFS_AGENT_MAX_COST_USD=1.0' -Quiet)) { throw "No se añadió RUFFS_AGENT_MAX_COST_USD" }
           $after = & $count
           "Filas en la base de datos: antes $before, después $after"
           if ([int]$after -lt [int]$before) { throw "La base de datos perdió datos" }

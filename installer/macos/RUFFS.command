@@ -75,6 +75,16 @@ if [ ! -f .env ] && [ -f .env.example ]; then
   sed -i '' 's/^APP_BIND=.*/APP_BIND=0.0.0.0/' .env
   echo "Creado .env (puedes poner ahí tu OPENROUTER_API_KEY o configurarla desde la app)."
 fi
+# Actualizaciones: ajustes nuevos en un .env ya existente (se conserva al
+# actualizar). 1.1.3: rondas del agente de 60 a 200 y tope de gasto por mensaje.
+if [ -f .env ]; then
+  if grep -q '^RUFFS_AGENT_MAX_ROUNDS=60[[:space:]]*$' .env; then
+    sed -i '' 's/^RUFFS_AGENT_MAX_ROUNDS=60[[:space:]]*$/RUFFS_AGENT_MAX_ROUNDS=200/' .env
+  fi
+  if ! grep -q '^RUFFS_AGENT_MAX_COST_USD=' .env; then
+    printf '\n# Tope de gasto por mensaje en dólares (coste real de OpenRouter); 0 = sin tope.\nRUFFS_AGENT_MAX_COST_USD=1.0\n' >> .env
+  fi
+fi
 mkdir -p data
 export PYTHONUTF8=1 NUMBA_DISABLE_JIT=1
 
