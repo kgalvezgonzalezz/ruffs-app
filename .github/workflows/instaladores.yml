@@ -6,6 +6,9 @@ name: Instaladores
 # Ambos se generan con scripts/exportar_limpio.py: sin datos de usuario.
 # Los archivos quedan como "artifacts" del run; con una etiqueta v* se
 # publican además en una Release.
+#
+# En el repositorio privado (variable PUBLIC_REPO definida) no compila: lo
+# hace el público, donde GitHub Actions es gratis. Ver publicar.yml.
 
 on:
   workflow_dispatch:
@@ -23,6 +26,9 @@ concurrency:
 jobs:
   macos:
     name: macOS (RUFFS.dmg)
+    # Solo compila donde no hay copia pública configurada (el repositorio público,
+    # gratis); en el privado, solo si se lanza a mano (Actions → Run workflow).
+    if: ${{ vars.PUBLIC_REPO == '' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -131,6 +137,7 @@ jobs:
         # Los permisos de Grabación de pantalla / Accesibilidad del runner no
         # dependen de RUFFS: se informa del resultado sin bloquear la build.
         continue-on-error: true
+        timeout-minutes: 8
         run: |
           cd "$RUFFS_SUPPORT_DIR/app"
           export PATH="$RUFFS_SUPPORT_DIR/node/bin:$RUFFS_SUPPORT_DIR/bin:$PATH"
@@ -176,6 +183,7 @@ jobs:
 
       - name: Ventana de escritorio (pywebview) en macOS
         continue-on-error: true
+        timeout-minutes: 4
         run: |
           cd "$RUFFS_SUPPORT_DIR/app"
           PYTHONUTF8=1 NUMBA_DISABLE_JIT=1 .venv/bin/python ruffs_desktop.py --port 7101 --smoke 8
@@ -196,6 +204,9 @@ jobs:
 
   windows:
     name: Windows (RUFFS-Setup.exe)
+    # Solo compila donde no hay copia pública configurada (el repositorio público,
+    # gratis); en el privado, solo si se lanza a mano (Actions → Run workflow).
+    if: ${{ vars.PUBLIC_REPO == '' || github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
     timeout-minutes: 60
     steps:

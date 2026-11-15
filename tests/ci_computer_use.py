@@ -14,6 +14,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -28,7 +29,16 @@ from src.mcp_catalog import catalog  # noqa: E402
 from src.mcp_manager import _expand_placeholders  # noqa: E402
 
 FAIL: list[str] = []
-APP_STATE = {"sent": 0, "text": ""}
+STATE_FILE = ""
+
+
+def state() -> dict:
+    """Estado de la ventana de prueba (la escribe su propio proceso)."""
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -37,51 +47,61 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         FAIL.append(name)
 
 
-def run_window(ready: threading.Event, geom: dict) -> None:
+def window_main(path: str) -> None:
+    """Ventana Tk en su propio proceso (en macOS Tk tiene que ir en el hilo principal)."""
     import tkinter as tk
     root = tk.Tk()
     root.title("Ventana de prueba RUFFS")
     root.geometry("520x220+160+160")
     root.attributes("-topmost", True)
     var = tk.StringVar()
+    sent = {"n": 0}
     tk.Label(root, text="Prueba de control del equipo", font=("Arial", 16)).pack(pady=8)
     entry = tk.Entry(root, textvariable=var, font=("Arial", 16), width=28)
     entry.pack(pady=6)
-
-    def send():
-        APP_STATE["sent"] += 1
-    btn = tk.Button(root, text="Enviar", font=("Arial", 16), command=send)
+    btn = tk.Button(root, text="Enviar", font=("Arial", 16), command=lambda: sent.__setitem__("n", sent["n"] + 1))
     btn.pack(pady=6)
 
-    def poll():
-        APP_STATE["text"] = var.get()
-        root.after(100, poll)
-
-    def report():
+    def write():
         root.update_idletasks()
-        geom["entry"] = (entry.winfo_rootx() + entry.winfo_width() // 2, entry.winfo_rooty() + entry.winfo_height() // 2)
-        geom["button"] = (btn.winfo_rootx() + btn.winfo_width() // 2, btn.winfo_rooty() + btn.winfo_height() // 2)
+        data = {"text": var.get(), "sent": sent["n"],
+                "entry": [entry.winfo_rootx() + entry.winfo_width() // 2, entry.winfo_rooty() + entry.winfo_height() // 2],
+                "button": [btn.winfo_rootx() + btn.winfo_width() // 2, btn.winfo_rooty() + btn.winfo_height() // 2]}
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+        root.after(100, write)
+
+    def first():
         root.lift()
         root.focus_force()
-        ready.set()
-    root.after(800, report)
-    root.after(100, poll)
-    geom["root"] = root
+        write()
+    root.after(800, first)
     root.mainloop()
 
 
 async def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-elements", action="store_true", help="no probar mark_elements (sin Agent Desktop)")
+    ap.add_argument("--window", help=argparse.SUPPRESS)
     a = ap.parse_args()
+    if a.window:
+        window_main(a.window)
+        return 0
 
     data = tempfile.mkdtemp(prefix="ruffs-cu-")
     with open(os.path.join(data, "config.json"), "w", encoding="utf-8") as f:
         json.dump({"confirmacion": "chat", "parada_con_esc_triple": False}, f)
 
-    ready, geom = threading.Event(), {}
-    threading.Thread(target=run_window, args=(ready, geom), daemon=True).start()
-    ready.wait(15)
+    global STATE_FILE
+    STATE_FILE = os.path.join(data, "ventana.json")
+    win = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--window", STATE_FILE])
+    for _ in range(150):
+        if "entry" in state():
+            break
+        time.sleep(0.1)
+    geom = {"entry": tuple(state()["entry"]), "button": tuple(state()["button"])}
     from pynput.mouse import Controller as _M
     _M().position = geom["entry"]   # lejos de la esquina de parada
 
@@ -136,10 +156,10 @@ async def main() -> int:
             check("click en el campo", "Hecho" in text and len(imgs) == 1, text.splitlines()[0][:100])
             await call("type_text", text="Hola, ñandú: acción ✓", show="none")
             time.sleep(0.5)
-            check("type_text con tildes", APP_STATE["text"] == "Hola, ñandú: acción ✓", repr(APP_STATE["text"]))
+            check("type_text con tildes", state().get("text") == "Hola, ñandú: acción ✓", repr(state().get("text")))
             await call("press_keys", keys="mod+a, backspace", show="none")
             time.sleep(0.4)
-            check("press_keys (seleccionar todo y borrar)", APP_STATE["text"] == "", repr(APP_STATE["text"]))
+            check("press_keys (seleccionar todo y borrar)", state().get("text") == "", repr(state().get("text")))
 
             # Confirmación: regla "esta app pide permiso" sobre la ventana de prueba.
             cfg_path = os.path.join(data, "config.json")
@@ -149,20 +169,20 @@ async def main() -> int:
             imgs, text = await call("click", x=bx, y=by, show="none")
             m = re.search(r'confirm_token="([0-9a-f]+)"', text)
             time.sleep(0.3)
-            check("pide confirmación antes de actuar", bool(m) and APP_STATE["sent"] == 0, text[:110])
+            check("pide confirmación antes de actuar", bool(m) and state().get("sent", 0) == 0, text[:110])
             _, bad = await call("click", x=bx, y=by, show="none", confirm_token="000000")
-            check("un token inventado no sirve", "NECESITA CONFIRMACIÓN" in bad and APP_STATE["sent"] == 0)
+            check("un token inventado no sirve", "NECESITA CONFIRMACIÓN" in bad and state().get("sent", 0) == 0)
             if m:
                 imgs, text = await call("click", x=bx, y=by, show="none", confirm_token=m.group(1))
                 time.sleep(0.4)
-                check("con el token del usuario sí se pulsa", APP_STATE["sent"] == 1, text[:80])
+                check("con el token del usuario sí se pulsa", state().get("sent", 0) == 1, text[:80])
             # Bloqueo: la app bloqueada no se toca en absoluto.
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump({"confirmacion": "chat", "parada_con_esc_triple": False,
                            "apps_bloqueadas": ["Ventana de prueba RUFFS"]}, f)
             _, text = await call("click", x=bx, y=by, show="none")
             time.sleep(0.3)
-            check("app bloqueada", "bloqueada" in text and APP_STATE["sent"] == 1, text[:90])
+            check("app bloqueada", "bloqueada" in text and state().get("sent", 0) == 1, text[:90])
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump({"confirmacion": "chat", "parada_con_esc_triple": False}, f)
 
@@ -179,10 +199,7 @@ async def main() -> int:
             check("sigue en pausa", "PAUSA" in text, text[:60])
             log = (await call("action_log", last=10))[1]
             check("registro de acciones", "click" in log and "parada" in log)
-    try:
-        geom["root"].after(0, geom["root"].destroy)
-    except Exception:  # noqa: BLE001
-        pass
+    win.terminate()
     print("\nResultado:", "todo bien" if not FAIL else f"fallos: {FAIL}")
     return 1 if FAIL else 0
 
