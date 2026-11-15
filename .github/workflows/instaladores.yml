@@ -56,7 +56,7 @@ jobs:
           python3 - <<'PY'
           import os, sys
           sys.path.insert(0, os.getcwd())
-          from routes.update_routes import mac_install_script
+          from src.update_mac import mac_install_script
           dmg = os.path.abspath("dist/RUFFS.dmg")
           app = os.path.join(os.environ["RUNNER_TEMP"], "Apps", "RUFFS.app")
           open(os.path.join(os.environ["RUNNER_TEMP"], "actualizar.sh"), "w").write(mac_install_script(dmg, app))
