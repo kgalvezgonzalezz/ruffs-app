@@ -125,3 +125,14 @@ def test_agent_desktop_launcher_node_script_or_native(cu, tmp_path):
     assert len(cmd) == 2 and cmd[1] == str(script)            # script de Node (Windows)
     script.write_bytes(b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01")      # binario nativo (macOS)
     assert cu._launcher(str(script)) == [str(script)]
+
+
+def test_focused_window_id_picks_active_window_of_front_app(cu, monkeypatch):
+    wins = [{"id": "w-1", "app_name": "Python", "pid": 10, "is_focused": False},
+            {"id": "w-2", "app_name": "Python", "pid": 20, "is_focused": True},
+            {"id": "w-3", "app_name": "Python", "pid": 20, "is_focused": False, "minimized": True}]
+    monkeypatch.setattr(cu, "_ad_run", lambda *a, **k: {"ok": True, "data": wins})
+    monkeypatch.setattr(cu, "_front_app", lambda: {"app": "Python", "pid": 20})
+    assert cu._focused_window_id() == "w-2"
+    monkeypatch.setattr(cu, "_ad_run", lambda *a, **k: {"ok": False, "error": {"message": "x"}})
+    assert cu._focused_window_id() is None

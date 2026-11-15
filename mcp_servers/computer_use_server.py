@@ -525,46 +525,76 @@ def _agent_desktop_cmd() -> list[str] | None:
     return None
 
 
-def _snapshot(app: str | None, surface: str | None, timeout_ms: int = 6000) -> dict:
+def _ad_run(sub: list[str], timeout: float = 90) -> dict:
+    """Ejecuta Agent Desktop y devuelve su respuesta JSON ({ok, data|error})."""
     cmd = _agent_desktop_cmd()
     if not cmd:
         raise RuntimeError("No se encontró Agent Desktop (hace falta Node.js; RUFFS lo instala).")
-    def build(t_ms: int, app_name: str | None) -> list[str]:
-        a = cmd + ["snapshot", "--include-bounds", "-i", "--compact", "--timeout-ms", str(t_ms)]
-        if app_name:
-            a += ["--app", app_name]
-        if surface:
-            a += ["--surface", surface]
-        return a
-
-    args = build(timeout_ms, app)
     kw: dict = {"creationflags": 0x08000000} if IS_WINDOWS else {}
     # Agent Desktop exige crear él mismo su carpeta privada (con sus permisos);
-    # si una anterior quedó con permisos que no acepta, se rehace.
+    # si una anterior quedó con permisos que no acepta, se rehace una vez.
     home = os.path.join(DATA_DIR, "agent-desktop-home")
-    fixed_home = slowed = False
-    for _ in range(3):
-        res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             timeout=90, stdin=subprocess.DEVNULL,
+    for attempt in range(2):
+        res = subprocess.run(cmd + sub, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=timeout, stdin=subprocess.DEVNULL,
                              env={**os.environ, "AGENT_DESKTOP_HOME": home}, **kw)
         try:
             data = json.loads(res.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             raise RuntimeError(f"Agent Desktop no respondió bien: {(res.stderr or res.stdout)[-400:]}")
         msg = (data.get("error") or {}).get("message", "")
-        if data.get("ok"):
-            break
-        if not fixed_home and ("principal" in msg or "DACL" in msg or "owner" in msg):
-            fixed_home = True
+        if not data.get("ok") and attempt == 0 and ("principal" in msg or "DACL" in msg or "owner" in msg):
             shutil.rmtree(home, ignore_errors=True)
             continue
-        if not slowed and re.search(r"stabiliz|deadline|timed? ?out", msg, re.I):
-            # Equipo lento (o muchas ventanas): más tiempo y solo la app activa.
-            slowed = True
-            front = app or (_front_app().get("app") or "").removesuffix(".exe") or None
-            args = build(max(timeout_ms, 20000), front)
-            continue
-        break
+        return data
+    return data
+
+
+def _focused_window_id(app: str | None = None) -> str | None:
+    """Id (de Agent Desktop) de la ventana activa: así no importa que haya varias
+    ventanas o instancias de la misma app (p. ej. dos procesos «Python»)."""
+    try:
+        data = _ad_run(["list-windows"] + (["--app", app] if app else []), timeout=30)
+    except Exception:  # noqa: BLE001
+        return None
+    if not data.get("ok"):
+        return None
+    wins = [w for w in data.get("data") or [] if not w.get("minimized") and w.get("id")]
+    pid = _front_app().get("pid")
+    for pick in (lambda w: w.get("is_focused") and w.get("pid") == pid,
+                 lambda w: w.get("is_focused"),
+                 lambda w: w.get("pid") == pid):
+        for w in wins:
+            if pick(w):
+                return str(w["id"])
+    return None
+
+
+def _snapshot(app: str | None, surface: str | None, timeout_ms: int = 6000) -> dict:
+    """Árbol de accesibilidad con posiciones. Para la ventana activa se pide por su
+    id (fiable aunque haya varias instancias de la app); para superficies del
+    sistema (barra de tareas, Dock, menús…) se usa ``surface``."""
+    window_mode = not surface or surface == "window"
+    win = _focused_window_id(app) if window_mode else None
+
+    def build(t_ms: int) -> list[str]:
+        a = ["snapshot", "--include-bounds", "-i", "--compact", "--timeout-ms", str(t_ms)]
+        if win:
+            a += ["--window-id", win]
+        elif app:
+            a += ["--app", app]
+        if surface and not win:
+            a += ["--surface", surface]
+        return a
+
+    data = _ad_run(build(timeout_ms))
+    msg = (data.get("error") or {}).get("message", "")
+    if not data.get("ok") and re.search(r"stabiliz|deadline|timed? ?out|multiple|instances", msg, re.I):
+        # Equipo lento o app con varias instancias: ventana activa por id y más tiempo.
+        if window_mode and not win:
+            win = _focused_window_id(app)
+        data = _ad_run(build(max(timeout_ms, 20000)))
+        msg = (data.get("error") or {}).get("message", "")
     if not data.get("ok"):
         raise RuntimeError(f"Agent Desktop: {msg or data}")
     return data["data"]
