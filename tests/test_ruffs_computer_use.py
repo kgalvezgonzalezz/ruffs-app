@@ -116,3 +116,12 @@ def test_computer_ruffs_persona_is_seeded_once(tmp_path):
     assert "__screenshot" in prompt and "request_confirmation" in prompt
     pm.delete_user_template(t["id"])
     assert not PresetManager(str(tmp_path)).get_user_templates()   # borrada → no vuelve
+
+
+def test_agent_desktop_launcher_node_script_or_native(cu, tmp_path):
+    script = tmp_path / "agent-desktop"
+    script.write_text("#!/usr/bin/env node\nconsole.log(1)\n", encoding="utf-8")
+    cmd = cu._launcher(str(script))
+    assert len(cmd) == 2 and cmd[1] == str(script)            # script de Node (Windows)
+    script.write_bytes(b"\xcf\xfa\xed\xfe\x0c\x00\x00\x01")      # binario nativo (macOS)
+    assert cu._launcher(str(script)) == [str(script)]

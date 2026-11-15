@@ -287,12 +287,31 @@ def _app_at(x: int, y: int) -> dict:
                 b = w.get("kCGWindowBounds") or {}
                 if w.get("kCGWindowLayer", 1) == 0 and b and \
                         b["X"] <= x < b["X"] + b["Width"] and b["Y"] <= y < b["Y"] + b["Height"]:
-                    return {"app": str(w.get("kCGWindowOwnerName", "")),
-                            "title": str(w.get("kCGWindowName", "") or ""),
-                            "pid": int(w.get("kCGWindowOwnerPID", 0))}
+                    pid = int(w.get("kCGWindowOwnerPID", 0))
+                    title = str(w.get("kCGWindowName", "") or "") or _ax_title(pid)
+                    return {"app": str(w.get("kCGWindowOwnerName", "")), "title": title, "pid": pid}
     except Exception:  # noqa: BLE001
         pass
     return _front_app()
+
+
+def _ax_title(pid: int) -> str:
+    """macOS: título de la ventana principal/enfocada de una app vía Accesibilidad."""
+    if not IS_MAC or not pid:
+        return ""
+    try:
+        from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
+                                         kAXFocusedWindowAttribute, kAXMainWindowAttribute, kAXTitleAttribute)
+        app = AXUIElementCreateApplication(pid)
+        for attr in (kAXFocusedWindowAttribute, kAXMainWindowAttribute):
+            err, win = AXUIElementCopyAttributeValue(app, attr, None)
+            if err == 0 and win is not None:
+                err, title = AXUIElementCopyAttributeValue(win, kAXTitleAttribute, None)
+                if err == 0 and title:
+                    return str(title)
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
 
 
 def _front_app() -> dict:
@@ -304,7 +323,8 @@ def _front_app() -> dict:
         if IS_MAC:
             from AppKit import NSWorkspace
             a = NSWorkspace.sharedWorkspace().frontmostApplication()
-            return {"app": str(a.localizedName()), "title": "", "pid": int(a.processIdentifier())}
+            pid = int(a.processIdentifier())
+            return {"app": str(a.localizedName()), "title": _ax_title(pid), "pid": pid}
     except Exception:  # noqa: BLE001
         pass
     return {"app": "", "title": "", "pid": 0}
@@ -459,12 +479,30 @@ _INTERACTIVE_ROLES = {"button", "link", "checkbox", "radio", "radiobutton", "swi
                       "secure text field", "toggle", "dropdown", "menubaritem"}
 
 
+def _launcher(script: str) -> list[str]:
+    """bin/agent-desktop es un script de Node en Windows, pero en macOS/Linux su
+    instalación lo sustituye por el binario nativo: se ejecuta tal cual."""
+    try:
+        with open(script, "rb") as f:
+            head = f.read(64)
+    except OSError:
+        head = b""
+    if head.startswith(b"#!") and b"node" in head.split(b"\n", 1)[0]:
+        return [shutil.which("node") or "node", script]
+    if not IS_WINDOWS:
+        try:
+            os.chmod(script, os.stat(script).st_mode | 0o111)
+        except OSError:
+            pass
+    return [script]
+
+
 def _agent_desktop_cmd() -> list[str] | None:
     try:
         with open(_AD_PATH, encoding="utf-8") as f:
             script = f.read().strip()
         if os.path.isfile(script):
-            return [shutil.which("node") or "node", script]
+            return _launcher(script)
     except OSError:
         pass
     npx = shutil.which("npx")
@@ -483,7 +521,7 @@ def _agent_desktop_cmd() -> list[str] | None:
                 os.makedirs(DATA_DIR, exist_ok=True)
                 with open(_AD_PATH, "w", encoding="utf-8") as f:
                     f.write(script)
-                return [shutil.which("node") or "node", script]
+                return _launcher(script)
     return None
 
 
