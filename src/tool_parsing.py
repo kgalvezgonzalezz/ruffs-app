@@ -74,8 +74,9 @@ def _normalize_dsml(text: str) -> str:
     if "DSML" not in text:
         return text
     t = text
-    t = re.sub(rf"<\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*tool_calls\s*>", "<tool_call>", t, flags=re.IGNORECASE)
-    t = re.sub(rf"<\s*/\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*tool_calls\s*>", "</tool_call>", t, flags=re.IGNORECASE)
+    # RUFFS: también la variante «calls» (<｜DSML｜ calls>) que deja basura visible.
+    t = re.sub(rf"<\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*(?:tool_)?calls\s*>", "<tool_call>", t, flags=re.IGNORECASE)
+    t = re.sub(rf"<\s*/\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*(?:tool_)?calls\s*>", "</tool_call>", t, flags=re.IGNORECASE)
     t = re.sub(rf"<\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*invoke\s+name=", "<invoke name=", t, flags=re.IGNORECASE)
     t = re.sub(rf"<\s*/\s*{_DSML_PIPES}\s*DSML\s*{_DSML_PIPES}\s*invoke\s*>", "</invoke>", t, flags=re.IGNORECASE)
     # parameter open tag — drop any extra attrs (e.g. string="true").

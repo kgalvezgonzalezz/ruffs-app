@@ -492,3 +492,76 @@ def get_tool_index() -> Optional[ToolIndex]:
         logger.warning(f"ToolIndex init failed (will retry in {_RETRY_INTERVAL}s): {e}")
         _tool_index = None
         return None
+
+
+# ─── RUFFS: selección de herramientas MCP por servidor ───────────────────────
+# La búsqueda por similitud elige herramientas sueltas (top-K). Con cientos de
+# herramientas MCP eso dejaba fuera justo las necesarias (p. ej. click y
+# open_target de Computer Use) y metía otras parecidas de otro servidor, y el
+# modelo terminaba repitiendo consultas o usando herramientas equivocadas.
+_SMALL_SERVER_MAX_TOOLS = 40      # servidores pequeños: si se usa uno, entero
+_BIG_SERVER_TOP = 25              # servidores grandes nombrados: las más relevantes
+_SERVER_ALIASES = {
+    "computer_use": ("computer use", "computer ruffs", "computer-use", "computer_use"),
+    "ghidra": ("ghidra",),
+    "rea": ("rea", "reverse engineering"),
+    "agent_desktop": ("agent desktop", "agent-desktop"),
+    "hyperframes": ("hyperframes", "heygen"),
+}
+# Alias tan inequívocos que basta verlos en el prompt de sistema (p. ej. la
+# persona «Computer Ruffs») para incluir el servidor.
+_STRONG_ALIASES = {"computer ruffs", "computer use"}
+
+
+def _mentions(alias: str, text: str) -> bool:
+    return bool(re.search(r"(?<![\w-])" + re.escape(alias) + r"(?![\w-])", text))
+
+
+def expand_mcp_selection(selected, query: str, mcp_mgr, tool_idx=None, extra_text: str = "") -> Set[str]:
+    """Completa la selección de herramientas MCP pensando en servidores enteros.
+
+    * Si se eligió alguna herramienta de un servidor pequeño (≤ 40), se añaden
+      todas las de ese servidor.
+    * Si el usuario nombra un servidor (o la persona activa es «Computer Ruffs»),
+      se añaden sus herramientas: todas si es pequeño, las 25 más relevantes si
+      es grande.
+    """
+    out = set(selected or ())
+    q = (query or "").lower()
+    sys_text = (extra_text or "").lower()
+    tools_by_server = getattr(mcp_mgr, "_tools", None) or {}
+    conns = getattr(mcp_mgr, "_connections", None) or {}
+    for sid, tools in list(tools_by_server.items()):
+        try:
+            if mcp_mgr.is_builtin(sid) and sid != "builtin_browser":
+                continue  # los integrados usan otro formato y nombres
+        except Exception:
+            pass
+        names = [f"mcp__{sid}__{t.get('name')}" for t in (tools or []) if t.get("name")]
+        if not names:
+            continue
+        label = str((conns.get(sid) or {}).get("name") or sid)
+        base = label.split("(")[0].strip().lower()
+        key = sid.removeprefix("catalog_").lower()
+        aliases = set(_SERVER_ALIASES.get(key, ())) | {key.replace("_", " "), key}
+        for k, al in _SERVER_ALIASES.items():
+            if k.replace("_", " ") in base or k in base or any(a == base for a in al):
+                aliases |= set(al)
+        if len(base) >= 3 and not re.fullmatch(r"[0-9a-f]{6,}", base):
+            aliases.add(base)
+        aliases = {a for a in aliases if len(a) >= 3 and not re.fullmatch(r"[0-9a-f]{6,}", a)}
+        mentioned = any(_mentions(a, q) for a in aliases) or any(
+            a in _STRONG_ALIASES and _mentions(a, sys_text) for a in aliases)
+        used = any(n in out for n in names)
+        if not (mentioned or used):
+            continue
+        if len(names) <= _SMALL_SERVER_MAX_TOOLS:
+            out.update(names)
+        elif mentioned and tool_idx is not None:
+            try:
+                ranked = tool_idx.retrieve(query, k=120)
+            except Exception:
+                ranked = []
+            prefix = f"mcp__{sid}__"
+            out.update([n for n in ranked if n.startswith(prefix)][:_BIG_SERVER_TOP])
+    return out

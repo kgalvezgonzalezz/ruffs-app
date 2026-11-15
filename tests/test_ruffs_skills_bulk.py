@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import sys
 
 import pytest
 
@@ -70,39 +71,18 @@ def test_round_and_cost_defaults(monkeypatch):
     importlib.reload(rc)
 
 
-def test_agent_pauses_at_cost_cap(monkeypatch):
+def test_agent_pauses_at_cost_cap():
     """Cada ronda «cuesta» $0.30: con tope de $1 el agente se pausa tras la 4.ª ronda."""
-    import importlib
-    import sys
-    from unittest.mock import MagicMock
-    # Otros tests heredados dejan módulos falsos (MagicMock) en sys.modules.
-    for mod in list(sys.modules):
-        if isinstance(sys.modules.get(mod), MagicMock):
-            monkeypatch.delitem(sys.modules, mod)
-    import src.agent_loop as al
-    al = importlib.reload(al)
-    import src.ruffs_config as rc
-    monkeypatch.setattr(rc, "AGENT_MAX_COST_USD", 1.0)
-    calls = {"n": 0}
+    r = _sim("cost_cap")
+    assert r["calls"] == 4 and r["capped"], r
 
-    async def fake_llm(*args, **kwargs):
-        calls["n"] += 1
-        n = calls["n"]
-        text = f"Busco el dato {n}.\n```web_search\nconsulta distinta {n}\n```\n"
-        yield "data: " + json.dumps({"delta": text}) + "\n\n"
-        yield "data: " + json.dumps({"type": "usage", "data": {"input_tokens": 100, "output_tokens": 10, "cost": 0.30}}) + "\n\n"
-        yield "data: [DONE]\n\n"
 
-    monkeypatch.setattr(al, "stream_llm_with_fallback", fake_llm)
-
-    async def go():
-        out = []
-        async for chunk in al.stream_agent_loop(
-                "https://openrouter.ai/api/v1", "deepseek/deepseek-v4-flash",
-                [{"role": "user", "content": "investiga 50 cosas"}],
-                max_rounds=50, disabled_tools={"web_search"}):
-            out.append(chunk)
-        return "".join(out)
-    text = asyncio.run(go())
-    assert calls["n"] == 4, calls
-    assert "tope por mensaje: $1.00" in text and "paused_at_cost_limit" in text
+def _sim(name):
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    r = subprocess.run([sys.executable, os.path.join(root, "tests", "_agent_sim.py"), name],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       cwd=root, timeout=300, env={**os.environ, "PYTHONUTF8": "1"})
+    line = next((l for l in r.stdout.splitlines() if l.startswith("RESULT ")), None)
+    assert line, (r.stdout[-1500:], r.stderr[-1500:])
+    return json.loads(line[7:])

@@ -411,6 +411,13 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
     """Build the system prompt with only the specified tools included."""
     disabled = disabled_tools or set()
     included = tool_names - disabled
+    # RUFFS: en Windows el comando de bash lo ejecuta cmd.exe. Sin decirlo, el
+    # modelo gastaba rondas con ls/uname/rutas /c/… que fallan.
+    _win_shell_note = (
+        "\n\nSHELL ON THIS MACHINE: Windows. `bash` commands run in cmd.exe — use Windows "
+        "commands and paths: `dir`, `where`, `type`, `findstr`, `start \"\" \"C:\\path\\app.lnk\"`, "
+        "`C:\\Users\\...` (NOT ls, cat, grep, uname, /c/... or 2>/dev/null; use 2>nul)."
+    ) if os.name == "nt" and "bash" in included else ""
 
     if compact:
         tool_list = ", ".join(sorted(included)) if included else "none"
@@ -419,7 +426,7 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
             f"Available tools: {tool_list}.",
             _API_AGENT_RULES,
         ]
-        return "\n\n".join(parts)
+        return "\n\n".join(parts) + _win_shell_note
 
     parts = [_AGENT_PREAMBLE]
 
@@ -455,7 +462,7 @@ def _assemble_prompt(tool_names: set, disabled_tools: set = None, compact: bool 
         parts.append(f"(Other tools available when needed: {hint})")
 
     parts.append(_AGENT_RULES)
-    return "\n\n".join(parts)
+    return "\n\n".join(parts) + _win_shell_note
 
 
 # Legacy: full prompt with all tools (fallback when RAG unavailable)
@@ -1513,10 +1520,23 @@ async def stream_agent_loop(
                 if _retrieval_query:
                     try:
                         _relevant_tools = await asyncio.wait_for(
-                            asyncio.to_thread(tool_idx.get_tools_for_query, _retrieval_query, 8),
+                            asyncio.to_thread(tool_idx.get_tools_for_query, _retrieval_query, 12),
                             timeout=_TOOL_SELECTION_TIMEOUT_SECONDS,
                         )
                         logger.info(f"[tool-rag] Retrieved tools for query: {sorted(_relevant_tools - ALWAYS_AVAILABLE)}")
+                        # RUFFS: completar por servidor MCP (si se usa un servidor
+                        # pequeño, todas sus herramientas; si el usuario lo nombra,
+                        # también) — antes llegaban sueltas y faltaban click/open.
+                        if mcp_mgr:
+                            try:
+                                from src.tool_index import expand_mcp_selection
+                                _sys_text = " ".join(str(m.get("content", "")) for m in messages[:1]
+                                                     if m.get("role") == "system")
+                                _relevant_tools = expand_mcp_selection(
+                                    _relevant_tools, _retrieval_query, mcp_mgr, tool_idx,
+                                    extra_text=_sys_text[:20000])
+                            except Exception:
+                                logger.debug("expand_mcp_selection falló", exc_info=True)
                     except asyncio.TimeoutError:
                         logger.warning(
                             "[tool-rag] Retrieval exceeded %.1fs; falling back to always-available tools",
@@ -1698,6 +1718,8 @@ async def stream_agent_loop(
     _ruffs_cost = 0.0          # RUFFS: coste acumulado del turno (OpenRouter)
     _ruffs_cached_tokens = 0   # RUFFS: tokens de prompt servidos desde caché
     _ruffs_rounds_exhausted = False
+    from src.tool_guard import TurnToolGuard
+    _tool_guard = TurnToolGuard()  # RUFFS: frena consultas repetidas y fallos repetidos
     _ruffs_cost_capped = False  # RUFFS: pausado por el tope de gasto del mensaje
     from src.ruffs_config import AGENT_MAX_COST_USD as _RUFFS_MAX_COST
     total_tool_calls = 0  # for budget enforcement
@@ -2177,7 +2199,11 @@ async def stream_agent_loop(
         _real_text = _THINK_RE.sub("", cleaned_round).strip()
         # Circling = repeating a recent call with nothing written. Any
         # progress (a NEW distinct call, or actual answer text) resets it.
-        if _is_repeat and not _real_text:
+        # RUFFS: antes cualquier texto contaba como progreso, y el modelo escribía
+        # «voy a hacerlo» entre llamadas repetidas sin que el detector saltara.
+        # Una ronda repetida con solo una frase corta, o cuyas llamadas bloqueó
+        # el guard por repetidas, no avanza.
+        if (_is_repeat and len(_real_text) < 400) or _tool_guard.round_all_blocked():
             _stuck_rounds += 1
         else:
             _stuck_rounds = 0
@@ -2253,6 +2279,7 @@ async def stream_agent_loop(
         tool_result_texts = []  # plain text for native tool role messages
         round_images: List[Dict] = []  # RUFFS: capturas para modelos con visión
         budget_hit = False
+        _tool_guard.start_round()
         for i, block in enumerate(tool_blocks):
             # --- Tool budget check ---
             if max_tool_calls > 0 and total_tool_calls >= max_tool_calls:
@@ -2284,13 +2311,22 @@ async def stream_agent_loop(
 
             async def _run_tool():
                 try:
-                    return await execute_tool_block(
+                    _blocked = _tool_guard.check(block.tool_type, block.content)
+                    if _blocked is not None:
+                        logger.info(f"[agent] llamada repetida sin efecto bloqueada: {block.tool_type}")
+                        return _blocked
+                    _res = await execute_tool_block(
                         block,
                         session_id=session_id,
                         disabled_tools=disabled_tools,
                         owner=owner,
                         progress_cb=_push_progress,
                     )
+                    try:
+                        _tool_guard.record(block.tool_type, block.content, _res[1])
+                    except Exception:  # el guard nunca debe romper una herramienta
+                        logger.debug("tool_guard.record falló", exc_info=True)
+                    return _res
                 finally:
                     # Sentinel so the drainer knows to stop.
                     await _progress_q.put(None)
