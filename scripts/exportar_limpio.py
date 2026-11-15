@@ -93,6 +93,11 @@ def export(out: Path, ref: str) -> Path:
         tar.extractall(out, members=members)
     sha = _git("rev-parse", "--short", ref)
     (out / "RUFFS_BUILD").write_text(f"{sha} {time.strftime('%Y-%m-%d %H:%M')}\n", encoding="utf-8")
+    # Repositorio público donde buscar nuevas versiones (lo pone la compilación
+    # en GitHub). Sin él, el aviso de actualizaciones queda desactivado.
+    repo = os.environ.get("RUFFS_UPDATE_REPO", "").strip()
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
+        (out / "RUFFS_UPDATE_REPO").write_text(repo + "\n", encoding="utf-8")
     return out
 
 

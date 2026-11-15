@@ -1167,6 +1167,10 @@ app.include_router(setup_webhook_routes(webhook_manager, auth_manager, session_m
 from routes.api_token_routes import setup_api_token_routes
 app.include_router(setup_api_token_routes())
 
+# RUFFS: aviso e instalación de nuevas versiones (copias instaladas)
+from routes.update_routes import setup_update_routes
+app.include_router(setup_update_routes())
+
 logger.info("Webhook & API token routes initialized")
 
 # Notes (Google Keep-style notes/todos)

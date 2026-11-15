@@ -30,6 +30,9 @@ jobs:
     # gratis); en el privado, solo si se lanza a mano (Actions → Run workflow).
     if: ${{ vars.PUBLIC_REPO == '' || github.event_name == 'workflow_dispatch' }}
     runs-on: macos-latest
+    env:
+      # De dónde buscarán las nuevas versiones los RUFFS instalados.
+      RUFFS_UPDATE_REPO: ${{ vars.PUBLIC_REPO || github.repository }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +48,25 @@ jobs:
 
       - name: Construir RUFFS.app y RUFFS.dmg
         run: bash installer/macos/build_app.sh
+
+      - name: Actualización en macOS (sustituir RUFFS.app desde el DMG)
+        run: |
+          APPS="$RUNNER_TEMP/Apps"; mkdir -p "$APPS/RUFFS.app/Contents"
+          echo "versión vieja" > "$APPS/RUFFS.app/Contents/VIEJA"
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, os.getcwd())
+          from routes.update_routes import mac_install_script
+          dmg = os.path.abspath("dist/RUFFS.dmg")
+          app = os.path.join(os.environ["RUNNER_TEMP"], "Apps", "RUFFS.app")
+          open(os.path.join(os.environ["RUNNER_TEMP"], "actualizar.sh"), "w").write(mac_install_script(dmg, app))
+          PY
+          RUFFS_UPDATE_NO_OPEN=1 bash "$RUNNER_TEMP/actualizar.sh"
+          test ! -e "$APPS/RUFFS.app/Contents/VIEJA"
+          test -f "$APPS/RUFFS.app/Contents/Info.plist"
+          test -f "$APPS/RUFFS.app/Contents/Resources/ruffs/VERSION"
+          test -f "$APPS/RUFFS.app/Contents/Resources/ruffs/RUFFS_UPDATE_REPO"
+          echo "RUFFS.app sustituida por la del DMG: v$(cat "$APPS/RUFFS.app/Contents/Resources/ruffs/VERSION"), actualizaciones desde $(cat "$APPS/RUFFS.app/Contents/Resources/ruffs/RUFFS_UPDATE_REPO")"
 
       - name: Comprobar el .dmg (montar y ver la app)
         run: |
@@ -182,7 +204,7 @@ jobs:
           VENV_PY="$RUFFS_SUPPORT_DIR/app/.venv/bin/python"
           "$RUFFS_SUPPORT_DIR/bin/uv" pip install --python "$VENV_PY" --quiet pytest
           mkdir -p data
-          PYTHONUTF8=1 "$VENV_PY" -m pytest -q tests/test_ruffs_core.py tests/test_ruffs_mcp.py tests/test_ruffs_titles.py tests/test_ruffs_mcp_catalog.py tests/test_ruffs_remote_setup.py tests/test_static_imports_exist.py tests/test_ruffs_computer_use.py
+          PYTHONUTF8=1 "$VENV_PY" -m pytest -q tests/test_ruffs_core.py tests/test_ruffs_mcp.py tests/test_ruffs_titles.py tests/test_ruffs_mcp_catalog.py tests/test_ruffs_remote_setup.py tests/test_static_imports_exist.py tests/test_ruffs_computer_use.py tests/test_ruffs_update.py tests/test_ruffs_tool_guard.py tests/test_ruffs_skills_bulk.py
 
       - name: Ventana de escritorio (pywebview) en macOS
         continue-on-error: true
@@ -211,6 +233,9 @@ jobs:
     # gratis); en el privado, solo si se lanza a mano (Actions → Run workflow).
     if: ${{ vars.PUBLIC_REPO == '' || github.event_name == 'workflow_dispatch' }}
     runs-on: windows-latest
+    env:
+      # De dónde buscarán las nuevas versiones los RUFFS instalados.
+      RUFFS_UPDATE_REPO: ${{ vars.PUBLIC_REPO || github.repository }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -229,6 +254,9 @@ jobs:
           $p = Start-Process dist\RUFFS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$dir`"","/TASKS=`"`"" -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "El instalador terminó con código $($p.ExitCode)" }
           Get-Content "$dir\logs\instalacion.log" -Tail 15
+          if (-not (Test-Path "$dir\VERSION")) { throw "Falta VERSION en la instalación" }
+          if (-not (Test-Path "$dir\RUFFS_UPDATE_REPO")) { throw "Falta RUFFS_UPDATE_REPO (aviso de actualizaciones)" }
+          "Versión instalada: $((Get-Content "$dir\VERSION").Trim()) · actualizaciones desde: $((Get-Content "$dir\RUFFS_UPDATE_REPO").Trim())"
           if (-not (Test-Path "$dir\.venv\Scripts\python.exe")) { throw "No se creó el entorno de Python" }
           # El registro de RUFFS va a un archivo: pwsh trataría su stderr como errores.
           $runLog = Join-Path $env:RUNNER_TEMP "ruffs-windows.log"

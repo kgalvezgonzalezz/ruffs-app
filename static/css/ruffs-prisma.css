@@ -641,3 +641,18 @@ body.bg-pattern-aurora {
   .skin-prisma .chat-input-bar,
   .skin-prisma .icon-rail-btn { transition: none; }
 }
+
+
+/* RUFFS: aviso de nueva versión */
+.ruffs-update-box { max-width: 560px; width: calc(100vw - 32px); }
+.ruffs-update-notes { max-height: 45vh; overflow: auto; padding: 10px 12px; margin: 6px 0 10px;
+  border-radius: 10px; background: rgba(127,127,127,.08); font-size: 13px; line-height: 1.45; }
+.ruffs-update-notes h2, .ruffs-update-notes h3 { font-size: 14px; margin: 10px 0 4px; }
+.ruffs-update-notes ul { padding-left: 18px; margin: 4px 0; }
+.ruffs-update-sub { margin: 10px 0 0; font-weight: 600; }
+.ruffs-update-why { font-size: 12px; opacity: .8; }
+.ruffs-update-status { font-size: 13px; margin: 6px 0 0; min-height: 1em; }
+#ruffs-update-overlay .modal-footer { flex-wrap: wrap; gap: 8px; }
+#ruffs-update-btn, #ruffs-update-rail-btn { position: relative; }
+#ruffs-update-btn.has-update::after, #ruffs-update-rail-btn.has-update::after { content: ""; position: absolute; top: 4px; right: 4px; width: 7px; height: 7px;
+  border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 2px var(--bg-secondary, #111); }
