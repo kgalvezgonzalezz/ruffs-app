@@ -1,0 +1,44 @@
+# Secretos y configuración local
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+license.lic
+.app_key
+
+# Datos de usuario (sesiones, memoria, subidas, bases de datos)
+/data/
+datos_chroma/
+logs/
+uploads/
+*.db
+*.sqlite3
+
+# Entornos y dependencias
+.venv/
+venv/
+python/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Binarios generados
+/dist/
+/build/
+*.exe
+*.spec
+
+# Editor / SO
+.vscode/
+.idea/
+.claude/settings.local.json
+Thumbs.db
+desktop.ini
+
+# Caché de contenido web descargado por la app
+services/cache/content/
+
+# Registros en tiempo de ejecución (pueden contener consultas del usuario)
+*.log

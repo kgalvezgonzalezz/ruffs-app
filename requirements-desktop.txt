@@ -1,0 +1,7 @@
+# Ventana de escritorio de RUFFS (ruffs_desktop.py). La instalan los
+# instaladores de Windows y macOS; no hace falta para usar RUFFS en el navegador.
+pywebview>=5.3
+# Computer Use de RUFFS (mcp_servers/computer_use_server.py): capturas y control
+# del ratón y el teclado en Windows y macOS.
+mss>=9.0
+pynput>=1.7.7

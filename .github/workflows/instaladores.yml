@@ -1,0 +1,337 @@
+name: Instaladores
+
+# Compila y prueba los instaladores de RUFFS:
+#   - macOS: dist/RUFFS.dmg (RUFFS.app)   en macos-latest (Apple Silicon)
+#   - Windows: dist/RUFFS-Setup.exe       en windows-latest
+# Ambos se generan con scripts/exportar_limpio.py: sin datos de usuario.
+# Los archivos quedan como "artifacts" del run; con una etiqueta v* se
+# publican además en una Release.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, "ruffs/**"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instaladores-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (RUFFS.dmg)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Herramientas de empaquetado
+        run: |
+          # (runner.temp no existe a nivel de job: se fija aquí)
+          echo "RUFFS_SUPPORT_DIR=$RUNNER_TEMP/ruffs-support" >> "$GITHUB_ENV"
+          brew install create-dmg
+          python -m pip install --quiet pillow
+
+      - name: Construir RUFFS.app y RUFFS.dmg
+        run: bash installer/macos/build_app.sh
+
+      - name: Comprobar el .dmg (montar y ver la app)
+        run: |
+          hdiutil attach dist/RUFFS.dmg -nobrowse -mountpoint /tmp/ruffs-dmg
+          test -x /tmp/ruffs-dmg/RUFFS.app/Contents/MacOS/RUFFS
+          test -x /tmp/ruffs-dmg/RUFFS.app/Contents/Resources/bin/uv
+          lipo -archs /tmp/ruffs-dmg/RUFFS.app/Contents/Resources/bin/uv
+          test ! -e /tmp/ruffs-dmg/RUFFS.app/Contents/Resources/ruffs/data
+          test ! -e /tmp/ruffs-dmg/RUFFS.app/Contents/Resources/ruffs/.env
+          hdiutil detach /tmp/ruffs-dmg
+
+      - name: Primera instalación (como un usuario nuevo)
+        env:
+          RUFFS_BUNDLE_RES: ${{ github.workspace }}/dist/RUFFS.app/Contents/Resources
+          RUFFS_SETUP_ONLY: "1"
+        run: bash dist/RUFFS.app/Contents/Resources/RUFFS.command
+
+      - name: Arrancar RUFFS y comprobar que responde
+        env:
+          RUFFS_BUNDLE_RES: ${{ github.workspace }}/dist/RUFFS.app/Contents/Resources
+          RUFFS_HEADLESS: "1"
+        run: |
+          bash dist/RUFFS.app/Contents/Resources/RUFFS.command > "$RUNNER_TEMP/ruffs-server.log" 2>&1 &
+          for i in $(seq 1 300); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:7100/login || true)
+            [ "$code" = "200" ] && break; sleep 1
+          done
+          echo "login -> $code tras ${i}s"
+          [ "$code" = "200" ] || { tail -80 "$RUNNER_TEMP/ruffs-server.log"; exit 1; }
+          curl -fsS -o /dev/null http://127.0.0.1:7100/static/css/ruffs-prisma.css
+          curl -fsS http://127.0.0.1:7100/login | grep -q "RUFFS"
+
+      - name: Acceso desde la red (0.0.0.0) y primera cuenta solo en local
+        run: |
+          grep -q '^APP_BIND=0.0.0.0' "$RUFFS_SUPPORT_DIR/app/.env"
+          IP="$(ipconfig getifaddr en0 || ipconfig getifaddr en1 || true)"
+          echo "IP de red del Mac: ${IP:-ninguna}"
+          if [ -n "$IP" ]; then
+            curl -fsS -o /dev/null "http://$IP:7100/login"
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://$IP:7100/api/auth/setup" \
+              -H "Content-Type: application/json" -d '{"username":"intruso","password":"intruso-123"}')
+            echo "crear cuenta desde la red -> $code (esperado 403)"
+            [ "$code" = "403" ]
+          fi
+
+      - name: MCP (navegador con Node.js portátil y catálogo)
+        run: |
+          for i in $(seq 1 90); do
+            grep -q "MCP server connected: Built-in: Browser" "$RUNNER_TEMP/ruffs-server.log" && break; sleep 2
+          done
+          grep -E "MCP server connected|catálogo" "$RUFFS_SUPPORT_DIR/../ruffs-server.log" "$RUNNER_TEMP/ruffs-server.log" 2>/dev/null | sed 's/^.* - //' | sort -u
+          grep -q "MCP server connected: Built-in: Browser" "$RUNNER_TEMP/ruffs-server.log"
+          # El navegador del MCP abre de verdad una página (Chromium de Playwright).
+          cd "$RUFFS_SUPPORT_DIR/app"
+          export PATH="$RUFFS_SUPPORT_DIR/node/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH="$RUFFS_SUPPORT_DIR/ms-playwright"
+          cat > /tmp/mcp_browser_test.py <<'PY'
+          import asyncio, os
+          from mcp import ClientSession, StdioServerParameters
+          from mcp.client.stdio import stdio_client
+          async def main():
+              p = StdioServerParameters(command="npx", args=["-y", "@playwright/mcp@0.0.85", "--headless", "--browser", "chromium"], env=dict(os.environ))
+              async with stdio_client(p) as (r, w):
+                  async with ClientSession(r, w) as s:
+                      await s.initialize()
+                      res = await s.call_tool("browser_navigate", {"url": "https://example.com"})
+                      text = " ".join(getattr(c, "text", "") for c in res.content)
+                      print([l for l in text.splitlines() if "Title" in l][:1])
+                      assert not res.isError and "Example Domain" in text
+          asyncio.run(main())
+          PY
+          .venv/bin/python /tmp/mcp_browser_test.py
+
+      - name: MCP Ghidra, REA, Agent Desktop y HyperFrames (macOS)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          test -f "$RUFFS_SUPPORT_DIR/node/.ruffs-catalog-mcp" || { echo "No se precargaron los MCP del catálogo"; exit 1; }
+          cat > /tmp/hola.c <<'C'
+          #include <stdio.h>
+          int suma(int a, int b) { return a + b; }
+          int main(int argc, char **argv) { printf("hola %d\n", suma(argc, 2)); return 0; }
+          C
+          cc -O0 -o /tmp/hola /tmp/hola.c
+          cd "$RUFFS_SUPPORT_DIR/app"
+          export PATH="$RUFFS_SUPPORT_DIR/node/bin:$RUFFS_SUPPORT_DIR/bin:$PATH"
+          PYTHONUTF8=1 .venv/bin/python "$GITHUB_WORKSPACE/tests/ci_mcp_extra.py" --install-ghidra --binary /tmp/hola
+
+      - name: Computer Use (macOS, ventana de prueba)
+        if: ${{ !cancelled() }}
+        # Los permisos de Grabación de pantalla / Accesibilidad del runner no
+        # dependen de RUFFS: se informa del resultado sin bloquear la build.
+        continue-on-error: true
+        run: |
+          cd "$RUFFS_SUPPORT_DIR/app"
+          export PATH="$RUFFS_SUPPORT_DIR/node/bin:$RUFFS_SUPPORT_DIR/bin:$PATH"
+          PYTHONUTF8=1 .venv/bin/python "$GITHUB_WORKSPACE/tests/ci_computer_use.py"
+
+      - name: Actualizar encima conservando los datos (macOS)
+        if: ${{ !cancelled() }}
+        env:
+          RUFFS_BUNDLE_RES: ${{ github.workspace }}/dist/RUFFS.app/Contents/Resources
+          RUFFS_SETUP_ONLY: "1"
+        run: |
+          APP="$RUFFS_SUPPORT_DIR/app"
+          PY="$APP/.venv/bin/python"
+          test -f "$APP/data/app.db"
+          echo "mis chats y memorias" > "$APP/data/marca-actualizacion.txt"
+          echo "# marca-actualizacion" >> "$APP/.env"
+          count() { "$PY" -c "import sqlite3,sys; c=sqlite3.connect(sys.argv[1]); print(sum(c.execute(f'select count(*) from [{t}]').fetchone()[0] for (t,) in c.execute(\"select name from sqlite_master where type='table'\")))" "$APP/data/app.db"; }
+          before="$(count)"
+          echo "versión-anterior" > "$APP/RUFFS_BUILD"      # como si hubiera una versión vieja instalada
+          bash dist/RUFFS.app/Contents/Resources/RUFFS.command
+          grep -q "mis chats y memorias" "$APP/data/marca-actualizacion.txt"
+          grep -q "marca-actualizacion" "$APP/.env"
+          ! grep -q "versión-anterior" "$APP/RUFFS_BUILD"   # el programa sí se reemplazó
+          after="$(count)"
+          echo "Filas en la base de datos: antes $before, después $after"
+          [ "$after" -ge "$before" ]
+          echo "Actualización OK: datos y .env conservados, programa reemplazado"
+
+      - name: Captura de la interfaz en macOS
+        if: ${{ !cancelled() }}
+        run: |
+          npx -y playwright@1.49.1 install chromium
+          npx -y playwright@1.49.1 screenshot --viewport-size=1280,800 --wait-for-timeout=1500 \
+            http://127.0.0.1:7100/login "$RUNNER_TEMP/ruffs-macos-login.png"
+
+      - name: Pruebas de RUFFS en macOS
+        if: ${{ !cancelled() }}
+        run: |
+          VENV_PY="$RUFFS_SUPPORT_DIR/app/.venv/bin/python"
+          "$RUFFS_SUPPORT_DIR/bin/uv" pip install --python "$VENV_PY" --quiet pytest
+          mkdir -p data
+          PYTHONUTF8=1 "$VENV_PY" -m pytest -q tests/test_ruffs_core.py tests/test_ruffs_mcp.py tests/test_ruffs_titles.py tests/test_ruffs_mcp_catalog.py tests/test_ruffs_remote_setup.py tests/test_static_imports_exist.py tests/test_ruffs_computer_use.py
+
+      - name: Ventana de escritorio (pywebview) en macOS
+        continue-on-error: true
+        run: |
+          cd "$RUFFS_SUPPORT_DIR/app"
+          PYTHONUTF8=1 NUMBA_DISABLE_JIT=1 .venv/bin/python ruffs_desktop.py --port 7101 --smoke 8
+
+      - name: Reunir resultados
+        if: always()
+        run: |
+          mkdir -p out-macos
+          cp dist/RUFFS.dmg out-macos/ 2>/dev/null || true
+          cp "$RUNNER_TEMP/ruffs-macos-login.png" "$RUNNER_TEMP/ruffs-server.log" out-macos/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: RUFFS-macOS
+          path: out-macos/
+          if-no-files-found: warn
+
+  windows:
+    name: Windows (RUFFS-Setup.exe)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Inno Setup 6 (actual)
+        run: choco upgrade innosetup -y --no-progress
+      - name: Construir RUFFS-Setup.exe
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File installer\windows\build_installer.ps1
+      - name: Instalar como un usuario nuevo y arrancar
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ruffs-install"
+          $p = Start-Process dist\RUFFS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$dir`"","/TASKS=`"`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "El instalador terminó con código $($p.ExitCode)" }
+          Get-Content "$dir\logs\instalacion.log" -Tail 15
+          if (-not (Test-Path "$dir\.venv\Scripts\python.exe")) { throw "No se creó el entorno de Python" }
+          # El registro de RUFFS va a un archivo: pwsh trataría su stderr como errores.
+          $runLog = Join-Path $env:RUNNER_TEMP "ruffs-windows.log"
+          $job = Start-Job { param($d, $l) & powershell -NoProfile -ExecutionPolicy Bypass -File "$d\Iniciar_RUFFS.ps1" -Port 7177 *> $l } -ArgumentList $dir, $runLog
+          $ok = $false
+          for ($i = 0; $i -lt 300 -and -not $ok; $i++) {
+            try { $r = Invoke-WebRequest http://127.0.0.1:7177/login -UseBasicParsing -TimeoutSec 3; $ok = $r.StatusCode -eq 200 } catch { Start-Sleep 1 }
+          }
+          if (-not $ok) { Get-Content $runLog -Tail 60 -ErrorAction SilentlyContinue; throw "RUFFS no respondió" }
+          "RUFFS instalado responde en Windows tras ${i}s"
+          if (-not (Select-String -Path "$dir\.env" -Pattern '^APP_BIND=0\.0\.0\.0' -Quiet)) { throw ".env no tiene APP_BIND=0.0.0.0" }
+          if (-not (Test-Path "$dir\tools\node\node.exe")) { throw "No se instaló Node.js portátil" }
+          if (-not (Test-Path "$dir\tools\node\.ruffs-playwright-mcp")) { throw "No se preparó el MCP de navegador" }
+          if (-not (Test-Path "$dir\tools\uvx.exe")) { throw "Falta uvx.exe" }
+          $readLog = { (Get-Content $runLog -Raw -ErrorAction SilentlyContinue) + "" }
+          $mcpLog = & $readLog
+          for ($k = 0; $k -lt 60 -and $mcpLog -notmatch "Built-in: Browser \(builtin_browser\) - \d+ tools"; $k++) { Start-Sleep 2; $mcpLog = & $readLog }
+          ($mcpLog -split "`n") | Where-Object { $_ -match "MCP server connected|catálogo" }
+          if ($mcpLog -notmatch "Built-in: Browser \(builtin_browser\) - \d+ tools") { throw "El MCP de navegador no conectó" }
+          # Acceso por la IP de red (0.0.0.0) y primera cuenta rechazada desde fuera.
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+          "IP de red: $ip"
+          if ($ip) {
+            Invoke-WebRequest "http://${ip}:7177/login" -UseBasicParsing -TimeoutSec 5 | Out-Null
+            $code = 0
+            try { Invoke-WebRequest "http://${ip}:7177/api/auth/setup" -Method Post -ContentType "application/json" -Body '{"username":"intruso","password":"intruso-123"}' -UseBasicParsing | Out-Null; $code = 200 }
+            catch { $code = [int]$_.Exception.Response.StatusCode }
+            "crear cuenta desde la red -> $code (esperado 403)"
+            if ($code -ne 403) { throw "La primera cuenta no debe poder crearse desde la red" }
+          }
+          Stop-Job $job
+      - name: MCP Ghidra, REA, Agent Desktop y HyperFrames (Windows)
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ruffs-install"
+          if (-not (Test-Path "$dir\tools\node\.ruffs-catalog-mcp")) { throw "No se precargaron los MCP del catálogo" }
+          $env:PATH = "$dir\tools\node;$dir\tools;$env:PATH"
+          $env:PYTHONUTF8 = "1"
+          Push-Location $dir
+          & "$dir\.venv\Scripts\python.exe" "$env:GITHUB_WORKSPACE\tests\ci_mcp_extra.py" --install-ghidra --binary "$env:SystemRoot\System32\whoami.exe"
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { throw "Fallaron los MCP del catálogo" }
+      - name: Computer Use (Windows, ventana de prueba)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ruffs-install"
+          $env:PATH = "$dir\tools\node;$dir\tools;$env:PATH"
+          $env:PYTHONUTF8 = "1"
+          Push-Location $dir
+          & "$dir\.venv\Scripts\python.exe" "$env:GITHUB_WORKSPACE\tests\ci_computer_use.py"
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { throw "Computer Use falló" }
+      - name: Actualizar encima conservando los datos (Windows)
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ruffs-install"
+          $py = "$dir\.venv\Scripts\python.exe"
+          $db = "$dir\data\app.db"
+          if (-not (Test-Path $db)) { throw "No hay base de datos tras el primer arranque" }
+          Get-Process python -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Set-Content "$dir\data\marca-actualizacion.txt" "mis chats y memorias"
+          Add-Content "$dir\.env" "# marca-actualizacion"
+          $countPy = Join-Path $env:RUNNER_TEMP "contar_filas.py"
+          @'
+          import sqlite3, sys
+          c = sqlite3.connect(sys.argv[1])
+          tabs = [t for (t,) in c.execute("select name from sqlite_master where type='table'")]
+          print(sum(c.execute(f"select count(*) from [{t}]").fetchone()[0] for t in tabs))
+          '@ | Set-Content -Path $countPy -Encoding utf8
+          $count = { & $py $countPy $db }
+          $before = & $count
+          $p = Start-Process dist\RUFFS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=`"$dir`"","/TASKS=`"`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "La actualización terminó con código $($p.ExitCode)" }
+          if ((Get-Content "$dir\data\marca-actualizacion.txt") -ne "mis chats y memorias") { throw "Se perdieron archivos de data\" }
+          if (-not (Select-String "$dir\.env" -Pattern "marca-actualizacion" -Quiet)) { throw "La actualización sobrescribió .env" }
+          $after = & $count
+          "Filas en la base de datos: antes $before, después $after"
+          if ([int]$after -lt [int]$before) { throw "La base de datos perdió datos" }
+          $runLog = Join-Path $env:RUNNER_TEMP "ruffs-windows-upd.log"
+          $job = Start-Job { param($d, $l) & powershell -NoProfile -ExecutionPolicy Bypass -File "$d\Iniciar_RUFFS.ps1" -Port 7178 *> $l } -ArgumentList $dir, $runLog
+          $ok = $false
+          for ($i = 0; $i -lt 240 -and -not $ok; $i++) {
+            try { $r = Invoke-WebRequest http://127.0.0.1:7178/login -UseBasicParsing -TimeoutSec 3; $ok = $r.StatusCode -eq 200 } catch { Start-Sleep 1 }
+          }
+          Stop-Job $job
+          if (-not $ok) { Get-Content $runLog -Tail 40 -ErrorAction SilentlyContinue; throw "RUFFS no arrancó tras actualizar" }
+          "Actualización OK: datos y .env conservados, RUFFS arranca (${i}s)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RUFFS-Windows
+          path: dist/RUFFS-Setup.exe
+
+  release:
+    name: Publicar Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Crear la Release con los dos instaladores y las guías
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --notes "Instaladores de RUFFS: RUFFS-Setup.exe (Windows) y RUFFS.dmg (macOS)."; fi
+          gh release create "${GITHUB_REF_NAME}" --repo "$GITHUB_REPOSITORY" --title "RUFFS ${GITHUB_REF_NAME#v}" --latest "$@" \
+            artifacts/RUFFS-Windows/RUFFS-Setup.exe artifacts/RUFFS-macOS/RUFFS.dmg \
+            docs/guias/Guia_instalacion_RUFFS_Windows.docx docs/guias/Guia_instalacion_RUFFS_Mac.docx

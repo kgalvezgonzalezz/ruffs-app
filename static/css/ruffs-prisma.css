@@ -1,0 +1,643 @@
+/* ============================================================
+   RUFFS — interfaz "Prisma"
+   ------------------------------------------------------------
+   Piel visual que se aplica ENCIMA de style.css cuando <html>
+   tiene la clase .skin-prisma (theme.js → applySkin). Todo sale
+   de las variables del tema, así que cualquier tema (preset o
+   personalizado) se ve bien con ella:
+
+     --bg --fg --panel --border --red   colores base del tema
+     --accent-2                         segundo acento (degradados)
+     --glow           0..1              intensidad del brillo
+     --radius-scale   0.25..1.75        redondez de las esquinas
+     --font-family                      fuente del chat (sans-serif)
+     --font-display                     títulos / marca
+
+   La piel "classic" (tema "original") no carga nada de esto.
+   ============================================================ */
+
+/* ── Fuentes locales (CSP: font-src 'self') ── */
+@font-face { font-family: 'Manrope'; font-style: normal; font-weight: 200 800; font-display: swap;
+  src: url('/static/fonts/Manrope-Variable.woff2') format('woff2'); }
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 300 700; font-display: swap;
+  src: url('/static/fonts/SpaceGrotesk-Variable.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap;
+  src: url('/static/fonts/Inter-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 500; font-display: swap;
+  src: url('/static/fonts/Inter-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap;
+  src: url('/static/fonts/Inter-SemiBold.woff2') format('woff2'); }
+
+:root {
+  --accent-2: #19e6ff;
+  --glow: 0.6;
+  --radius-scale: 1;
+  --font-display: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* ── Fondo "Aurora" (disponible con cualquier piel) ── */
+body.bg-pattern-aurora {
+  background-image:
+    radial-gradient(60% 50% at 8% 0%,
+      color-mix(in srgb, var(--red) calc(26% * var(--bg-effect-intensity, 1)), transparent), transparent 70%),
+    radial-gradient(55% 45% at 100% 100%,
+      color-mix(in srgb, var(--accent-2) calc(16% * var(--bg-effect-intensity, 1)), transparent), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* ============================================================
+   Tokens de la piel
+   ============================================================ */
+.skin-prisma {
+  --r-lg: calc(18px * var(--radius-scale));
+  --r-md: calc(12px * var(--radius-scale));
+  --r-sm: calc(8px * var(--radius-scale));
+  --r-pill: calc(999px * var(--radius-scale));
+  --accent-grad: linear-gradient(135deg, var(--red), var(--accent-2));
+  --line: color-mix(in srgb, var(--fg) 11%, transparent);
+  --line-strong: color-mix(in srgb, var(--fg) 18%, transparent);
+  --muted: color-mix(in srgb, var(--fg) 58%, transparent);
+  --glass: color-mix(in srgb, var(--panel) 68%, transparent);
+  --glass-strong: color-mix(in srgb, var(--panel) 86%, transparent);
+  --glass-hover: color-mix(in srgb, var(--fg) 6%, transparent);
+  --glow-a: color-mix(in srgb, var(--red) calc(var(--glow) * 55%), transparent);
+  --glow-b: color-mix(in srgb, var(--accent-2) calc(var(--glow) * 45%), transparent);
+  --shadow-float: 0 18px 50px rgba(0, 0, 0, 0.42);
+  --blur: blur(18px) saturate(140%);
+  scrollbar-color: color-mix(in srgb, var(--fg) 20%, transparent) transparent;
+}
+.skin-prisma.theme-is-light {
+  --glass: color-mix(in srgb, var(--panel) 78%, transparent);
+  --glass-strong: color-mix(in srgb, var(--panel) 92%, transparent);
+  --shadow-float: 0 14px 40px color-mix(in srgb, var(--fg) 14%, transparent);
+}
+
+.skin-prisma ::selection { background: color-mix(in srgb, var(--red) 35%, transparent); }
+.skin-prisma :focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+
+@supports selector(::-webkit-scrollbar) {
+  .skin-prisma ::-webkit-scrollbar { width: 7px; height: 7px; }
+  .skin-prisma ::-webkit-scrollbar-track { background: transparent; }
+  .skin-prisma ::-webkit-scrollbar-thumb {
+    background-color: color-mix(in srgb, var(--fg) 18%, transparent);
+    border: 2px solid transparent; background-clip: padding-box; border-radius: 99px;
+  }
+  .skin-prisma ::-webkit-scrollbar-thumb:hover { background-color: var(--red); }
+}
+
+/* ============================================================
+   Navegación: barra de iconos + barra lateral de cristal
+   ============================================================ */
+.skin-prisma .icon-rail,
+.skin-prisma .sidebar {
+  background: color-mix(in srgb, var(--sidebar-bg, var(--panel)) 66%, transparent);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 0;
+  border-right: 1px solid var(--line);
+  box-shadow: none;
+}
+.skin-prisma .icon-rail.right-side,
+.skin-prisma .sidebar.right-side { border-right: 0; border-left: 1px solid var(--line); }
+.skin-prisma .sidebar.hidden { border: 0; }
+
+.skin-prisma .icon-rail-btn {
+  color: var(--fg);
+  opacity: 0.55;
+  border-radius: var(--r-sm);
+  transition: opacity 0.15s, background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.skin-prisma .icon-rail-btn:hover { opacity: 1; background: var(--glass-hover); }
+.skin-prisma .icon-rail-btn.active-section,
+.skin-prisma .icon-rail-btn.active {
+  opacity: 1;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 40%, transparent), 0 0 18px var(--glow-a);
+}
+.skin-prisma .icon-rail-btn.rail-new-chat {
+  opacity: 1;
+  color: #fff;
+  background: var(--accent-grad);
+  box-shadow: 0 0 16px var(--glow-a);
+}
+.skin-prisma .icon-rail-btn.rail-new-chat:hover { filter: brightness(1.08); }
+.skin-prisma .rail-separator,
+.skin-prisma .icon-rail-divider { background: var(--line); }
+
+.skin-prisma .sidebar-brand-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.skin-prisma .sidebar .section-title,
+.skin-prisma .sidebar .section-title-label {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+.skin-prisma .list-item {
+  border-radius: var(--r-sm);
+  border-color: transparent;
+}
+.skin-prisma .list-item:hover,
+.skin-prisma .models-row:hover {
+  background: var(--glass-hover);
+  border-color: transparent;
+}
+.skin-prisma .list-item.active,
+.skin-prisma .list-item.active-session {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--red) 18%, transparent), color-mix(in srgb, var(--accent-2) 4%, transparent));
+  border-color: transparent;
+  box-shadow: inset 2px 0 0 var(--red), inset 0 0 0 1px var(--line);
+}
+.skin-prisma #sidebar-new-chat-btn {
+  color: #fff;
+  background: var(--accent-grad);
+  border-radius: var(--r-md);
+  box-shadow: 0 0 18px var(--glow-a);
+  font-weight: 600;
+}
+.skin-prisma #sidebar-new-chat-btn:hover { filter: brightness(1.08); }
+.skin-prisma #sidebar-search-btn {
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.skin-prisma .sidebar-user-bar { border-top: 1px solid var(--line); }
+.skin-prisma .user-bar-left { border-radius: var(--r-sm); }
+.skin-prisma .user-bar-avatar { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-2) 55%, transparent); }
+
+/* ============================================================
+   Zona de chat
+   ============================================================ */
+.skin-prisma #current-meta { font-family: var(--font-display); letter-spacing: 0.02em; }
+
+/* Bienvenida */
+.skin-prisma #welcome-screen .welcome-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* Logo grande encima del nombre. Sin `filter`: un drop-shadow dentro de un
+   texto con background-clip:text pinta un recuadro oscuro; el halo va en
+   un fondo radial del propio logo. */
+.skin-prisma #welcome-screen .welcome-name {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.skin-prisma #welcome-screen img.welcome-logo {
+  width: 96px; height: 104px; object-fit: contain; margin: 0;
+  padding: 4px; box-sizing: border-box;
+  filter: none;
+  /* Halo: el degradado radial ya se desvanece en los bordes. Nada de
+     border-radius aquí: en un <img> recorta la imagen (hocico, cola, patas). */
+  background: radial-gradient(closest-side, var(--glow-a), transparent);
+  border-radius: 0;
+  overflow: visible;
+}
+.skin-prisma .welcome-sub,
+.skin-prisma .welcome-tip { color: var(--muted); }
+.skin-prisma .incognito-btn { border-radius: var(--r-pill); border-color: var(--line); }
+
+/* Mensajes */
+.skin-prisma .msg { line-height: 1.6; }
+.skin-prisma .msg .body { font-size: 0.97em; line-height: 1.65; }
+.skin-prisma .msg-ai {
+  width: 100%;
+  max-width: 100%;
+  margin-left: 0;
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--ai-bubble-bg, var(--panel)) 62%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.skin-prisma .msg-user {
+  margin-right: 0;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg) var(--r-lg) calc(4px * var(--radius-scale)) var(--r-lg);
+  background:
+    linear-gradient(color-mix(in srgb, var(--red) 10%, var(--user-bubble-bg, var(--bg))),
+                    color-mix(in srgb, var(--red) 10%, var(--user-bubble-bg, var(--bg)))) padding-box,
+    var(--accent-grad) border-box;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--red) calc(var(--glow) * 22%), transparent);
+}
+.skin-prisma .msg .role { font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.03em; }
+.skin-prisma .msg-ai .role::before {
+  background: var(--accent-grad);
+  box-shadow: 0 0 8px var(--glow-b);
+}
+.skin-prisma .msg h1, .skin-prisma .msg h2, .skin-prisma .msg h3, .skin-prisma .msg h4 {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+.skin-prisma .msg a { color: var(--accent-2); }
+.skin-prisma .msg blockquote { border-left-color: var(--red); }
+.skin-prisma .msg code:not(pre code) {
+  border-radius: calc(5px * var(--radius-scale));
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+}
+.skin-prisma pre {
+  border-radius: var(--r-md);
+  border-color: var(--line);
+  background: var(--code-bg, var(--hl-bg));
+}
+.skin-prisma .msg table { border-radius: var(--r-sm); overflow: hidden; }
+
+/* Razonamiento y herramientas del agente */
+.skin-prisma .thinking-section {
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+.skin-prisma .thinking-header {
+  background: transparent;
+  border-bottom-color: var(--line);
+  box-shadow: inset 2px 0 0 var(--red);
+}
+.skin-prisma .thinking-header:hover { background: var(--glass-hover); }
+.skin-prisma .agent-thread { max-width: calc(100% - 28px); }
+.skin-prisma .agent-thread::before { background: linear-gradient(var(--red), var(--accent-2)); opacity: 0.35; }
+.skin-prisma .agent-thread-dot { background: var(--accent-2); }
+.skin-prisma .agent-thread-node.running .agent-thread-dot {
+  background: var(--red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 25%, transparent), 0 0 12px var(--glow-a);
+}
+.skin-prisma .agent-thread-icon { color: var(--accent-2); }
+.skin-prisma .agent-thread-cmd,
+.skin-prisma .agent-tool-output {
+  border-radius: var(--r-sm);
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.skin-prisma .agent-tool-output summary {
+  color: var(--fg);
+  background: transparent;
+  border-bottom-color: var(--line);
+}
+
+/* ============================================================
+   Caja de mensaje flotante
+   ============================================================ */
+.skin-prisma .chat-input-bar {
+  border-radius: calc(22px * var(--radius-scale));
+  background: color-mix(in srgb, var(--input-bg, var(--panel)) 80%, transparent);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-float);
+  margin-bottom: 14px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, margin 0.3s ease, max-width 0.3s ease;
+}
+.skin-prisma .chat-input-bar:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 1px var(--red), 0 0 34px var(--glow-a), var(--shadow-float);
+}
+.skin-prisma .chat-input-bar textarea#message { font-size: 15px; }
+
+.skin-prisma .input-icon-btn { border-radius: var(--r-sm); }
+.skin-prisma .input-icon-btn:hover { background: var(--glass-hover); }
+.skin-prisma .input-icon-btn.active,
+.skin-prisma .input-icon-btn[aria-pressed="true"] {
+  opacity: 1;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--red) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 45%, transparent);
+}
+.skin-prisma .input-icon-btn.tool-indicator { border-radius: var(--r-pill); }
+
+/* Agente / Chat */
+.skin-prisma .mode-toggle { border-radius: var(--r-pill); border-color: var(--line); }
+.skin-prisma .mode-toggle::before {
+  background: var(--accent-grad);
+  border-radius: var(--r-pill);
+  box-shadow: 0 0 14px var(--glow-a);
+}
+.skin-prisma #mode-agent-btn,
+.skin-prisma #mode-chat-btn { border-radius: var(--r-pill); }
+.skin-prisma .mode-toggle-btn.active,
+.skin-prisma .mode-toggle-btn.active:hover,
+.skin-prisma .mode-toggle-btn.active:focus { color: #fff !important; font-weight: 600; }
+
+/* Botón enviar / detener / nuevo chat */
+.skin-prisma .send-btn { border-radius: calc(12px * var(--radius-scale)); }
+.skin-prisma .send-btn[data-mode="send"] {
+  background: var(--accent-grad);
+  color: #fff;
+  border: 0;
+  box-shadow: 0 0 22px var(--glow-a);
+}
+.skin-prisma .send-btn[data-mode="send"]:hover { filter: brightness(1.1); }
+.skin-prisma .send-btn[data-mode="streaming"] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--red) 30%, transparent), 0 0 18px var(--glow-a);
+}
+.skin-prisma .send-btn.newchat-mode,
+.skin-prisma .send-btn.mic-mode {
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+}
+.skin-prisma .send-btn.newchat-mode:hover,
+.skin-prisma .send-btn.mic-mode:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
+
+/* Selector de modelo */
+.skin-prisma .model-picker-btn {
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.skin-prisma .model-picker-btn:hover { border-color: color-mix(in srgb, var(--red) 50%, transparent); }
+
+/* ============================================================
+   Menús, ventanas y tarjetas
+   ============================================================ */
+.skin-prisma .model-picker-menu,
+.skin-prisma .overflow-menu,
+.skin-prisma .export-dropdown-menu,
+.skin-prisma .msg-overflow-menu,
+.skin-prisma .ctx-popup,
+.skin-prisma .context-menu {
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+}
+.skin-prisma .overflow-menu-item,
+.skin-prisma .export-dropdown-item,
+.skin-prisma .msg-overflow-item { border-radius: var(--r-sm); }
+
+.skin-prisma .modal-content {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 0 0 1px color-mix(in srgb, var(--red) 10%, transparent);
+}
+.skin-prisma .modal-header h2,
+.skin-prisma .modal-header h3,
+.skin-prisma .admin-card h2 { font-family: var(--font-display); letter-spacing: 0.02em; }
+.skin-prisma .admin-card {
+  border-radius: var(--r-md);
+  border-color: var(--line);
+}
+.skin-prisma .admin-tab.active {
+  color: var(--fg);
+  border-image: var(--accent-grad) 1;
+}
+
+/* Botones de acción comunes dentro de paneles */
+.skin-prisma .harmony-generate-btn,
+.skin-prisma #theme-save-go,
+.skin-prisma .model-picker-action-btn.primary {
+  background: var(--accent-grad);
+  color: #fff;
+  border: 0;
+  border-radius: var(--r-sm);
+}
+
+/* Tarjetas de tema: muestra el degradado de los dos acentos */
+.skin-prisma .theme-swatch { border-radius: var(--r-md); }
+.skin-prisma .theme-swatch.active {
+  border-color: transparent;
+  box-shadow: 0 0 0 1px var(--red), 0 0 18px var(--glow-a);
+}
+
+/* Interruptores */
+.skin-prisma .admin-switch input:checked + .admin-slider {
+  background: var(--accent-grad);
+  box-shadow: 0 0 12px var(--glow-a);
+}
+
+/* ============================================================
+   Ajustes para igualar la maqueta Prisma
+   ============================================================ */
+/* Barra de iconos: algo más ancha y con botones más grandes */
+@media (min-width: 769px) {
+  .skin-prisma .icon-rail { width: 60px; gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .skin-prisma .icon-rail-btn { width: 40px; height: 40px; }
+}
+
+/* Barra superior: título del chat sobre una franja de cristal */
+.skin-prisma .chat-container { margin-top: 0; }
+.skin-prisma .chat-top-bar {
+  margin: 0 -16px 6px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+}
+.skin-prisma .chat-container.welcome-active .chat-top-bar { border-bottom-color: transparent; background: transparent; }
+.skin-prisma #current-meta { font-size: 14px; font-weight: 600; color: var(--fg); }
+.skin-prisma .chat-meta-count,
+.skin-prisma .session-cost-display { font-family: 'Fira Code', monospace; font-size: 11.5px; color: var(--muted); }
+
+/* Nombre del modelo con el degradado de los dos acentos */
+.skin-prisma .msg-ai .role {
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.skin-prisma .msg-ai .role .role-timestamp,
+.skin-prisma .msg .timestamp { -webkit-text-fill-color: var(--muted); font-family: 'Fira Code', monospace; letter-spacing: 0; font-weight: 400; }
+
+/* Texto del mensaje: títulos y negritas en el color del texto (no en
+   colores de resaltado de código), código en línea monoespaciado. */
+.skin-prisma .msg h1, .skin-prisma .msg h2, .skin-prisma .msg h3,
+.skin-prisma .msg h4, .skin-prisma .msg h5, .skin-prisma .msg h6 { color: var(--fg); font-weight: 650; }
+.skin-prisma .msg strong, .skin-prisma .msg b { color: color-mix(in srgb, var(--fg) 82%, #fff); font-weight: 650; }
+.skin-prisma.theme-is-light .msg strong, .skin-prisma.theme-is-light .msg b { color: var(--fg); }
+.skin-prisma .msg em, .skin-prisma .msg i { color: inherit; }
+.skin-prisma .msg code:not(pre code) {
+  font-family: 'Fira Code', Consolas, monospace;
+  font-size: 0.86em;
+  padding: 0.1em 0.38em;
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--line);
+}
+.skin-prisma .msg ol li::marker,
+.skin-prisma .msg ul li::marker { color: var(--accent-2); }
+.skin-prisma .msg a:hover { text-decoration: underline; }
+
+/* Botón principal redondo con degradado (enviar / nuevo chat) */
+.skin-prisma .send-btn { border-radius: 999px; min-width: 36px; width: 36px; height: 36px !important; }
+.skin-prisma .send-btn.newchat-mode,
+.skin-prisma .send-btn.mic-mode {
+  background: var(--accent-grad);
+  color: #fff;
+  border: 0;
+  box-shadow: 0 0 18px var(--glow-a);
+}
+.skin-prisma .send-btn.newchat-mode:hover,
+.skin-prisma .send-btn.mic-mode:hover { background: var(--accent-grad); filter: brightness(1.1); }
+
+/* ============================================================
+   Estructura de la maqueta (con prismaChrome.js)
+   ============================================================ */
+/* Logo del perro: arriba de la barra de iconos y junto a "RUFFS" */
+.rail-logo, .sidebar-brand-logo { display: none; }
+.skin-prisma .rail-logo {
+  display: grid; place-items: center;
+  width: 44px; height: 46px; margin: 4px 0 6px; padding: 0;
+  border: 0; background: none; cursor: pointer; border-radius: var(--r-md);
+  flex-shrink: 0;
+}
+.skin-prisma .rail-logo img {
+  width: 34px; height: 38px; object-fit: contain;
+  filter: drop-shadow(0 0 calc(4px + 10px * var(--glow)) var(--glow-a));
+  transition: transform 0.2s ease;
+}
+.skin-prisma .rail-logo:hover img { transform: scale(1.06); }
+.skin-prisma .sidebar-brand-logo {
+  display: inline-block; width: 26px; height: 28px; object-fit: contain;
+  margin-right: 8px; vertical-align: middle; position: relative; left: -10px;
+  filter: drop-shadow(0 0 8px var(--glow-a));
+}
+.skin-prisma .sidebar-brand { gap: 0; }
+
+@media (min-width: 769px) {
+  /* Con la barra contraída el ☰ pasa a la barra superior y el logo
+     ocupa la parte de arriba de la barra de iconos. */
+  .skin-prisma .icon-rail { padding-top: 10px; }
+  .skin-prisma body.sidebar-collapsed.hamburger-left .hamburger-btn {
+    left: calc(var(--icon-rail-w, 60px) + 12px); top: 13px;
+  }
+  .skin-prisma body.sidebar-collapsed.hamburger-right .hamburger-btn {
+    right: calc(var(--icon-rail-w, 60px) + 12px); top: 13px;
+  }
+
+  /* Barra superior: título + subtítulo a la izquierda, contexto a la derecha */
+  .skin-prisma .chat-top-bar {
+    justify-content: flex-start;
+    gap: 18px;
+    padding-left: 18px;
+    padding-right: 18px;
+    min-height: 54px;
+  }
+  .skin-prisma body.sidebar-collapsed.hamburger-left .chat-top-bar { padding-left: 54px; }
+  .skin-prisma body.sidebar-collapsed.hamburger-right .chat-top-bar { padding-right: 54px; }
+  .skin-prisma .chat-meta-overlay {
+    position: static;
+    transform: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, auto) auto 1fr;
+    grid-template-areas: "title chev ." "sub sub sub";
+    align-items: center;
+    justify-content: start;
+    row-gap: 3px;
+    font-size: 1rem;
+    line-height: 1.2;
+    color: var(--fg);
+  }
+  .skin-prisma .chat-meta-overlay #current-meta { grid-area: title; font-size: 15px; }
+  .skin-prisma .chat-meta-overlay .export-dropdown-wrap { grid-area: chev; margin: 0 0 0 2px; }
+  .skin-prisma .chat-meta-overlay .export-dl-btn { padding: 2px 4px; }
+  .skin-prisma .chat-meta-overlay #current-meta-count,
+  .skin-prisma .chat-meta-overlay #session-cost-display { display: none !important; }
+  .skin-prisma .prisma-sub {
+    grid-area: sub;
+    font-family: 'Fira Code', Consolas, monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .skin-prisma .prisma-sub:empty { display: none; }
+  .skin-prisma .prisma-ctx {
+    display: grid; gap: 5px; width: 150px; flex: none;
+    font-family: 'Fira Code', Consolas, monospace; font-size: 11px; color: var(--muted);
+  }
+  .skin-prisma .prisma-ctx[hidden] { display: none; }
+  .skin-prisma .prisma-ctx-bar {
+    display: block; height: 4px; border-radius: 99px; overflow: hidden;
+    background: color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  .skin-prisma .prisma-ctx-bar i {
+    display: block; height: 100%; width: 0; border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent-2), var(--red));
+    box-shadow: 0 0 10px var(--glow-b);
+    transition: width 0.4s ease;
+  }
+  .skin-prisma .prisma-ctx.warn .prisma-ctx-bar i { background: linear-gradient(90deg, var(--accent-2), #ff9900); }
+  .skin-prisma .prisma-ctx.danger .prisma-ctx-bar i { background: linear-gradient(90deg, #ff9900, var(--color-error, #ff4d6a)); }
+  .skin-prisma .prisma-ctx.danger .prisma-ctx-label { color: var(--color-error, #ff4d6a); }
+}
+@media (max-width: 768px) {
+  .skin-prisma .prisma-sub, .skin-prisma .prisma-ctx { display: none !important; }
+}
+
+/* Barra de la caja de mensaje: herramientas a la izquierda, modelo +
+   Agente/Chat + enviar a la derecha */
+.skin-prisma .chat-input-bar { padding: 12px 12px 10px 14px; gap: 6px; }
+.skin-prisma .chat-input-top { padding-right: 0; }
+.skin-prisma .chat-input-left { gap: 2px; align-items: center; }
+.skin-prisma .chat-input-right { gap: 8px; align-items: center; }
+.skin-prisma .input-icon-btn { width: 34px; height: 34px; padding: 0; opacity: 0.62; }
+.skin-prisma .input-icon-btn:hover { opacity: 1; }
+.skin-prisma .input-icon-btn[aria-disabled="true"] { opacity: 0.28; cursor: not-allowed; }
+.skin-prisma .input-icon-btn.tool-indicator { width: auto; padding: 0 10px; }
+.skin-prisma .input-icon-btn.active,
+.skin-prisma .input-icon-btn[aria-pressed="true"] {
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 12%, transparent);
+  box-shadow: none;
+}
+.skin-prisma .chat-input-right > .model-picker-wrap { position: relative; }
+.skin-prisma .chat-input-right .model-picker-btn {
+  height: 30px; padding: 0 10px; gap: 6px;
+  font-family: 'Fira Code', Consolas, monospace; font-size: 12px;
+  border: 0; background: none; color: var(--muted);
+  border-radius: var(--r-sm);
+}
+.skin-prisma .chat-input-right .model-picker-btn:hover { background: var(--glass-hover); color: var(--fg); }
+.skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: 190px; }
+.skin-prisma .chat-input-right .model-picker-menu { bottom: calc(100% + 12px); }
+.skin-prisma .mode-toggle { height: 32px; }
+.skin-prisma .mode-toggle-btn { padding: 0 13px; font-size: 12.5px; }
+.skin-prisma .send-btn { min-width: 38px; width: 38px; height: 38px !important; }
+
+/* ── Móvil ── */
+@media (max-width: 768px) {
+  .skin-prisma .msg-ai { padding: 12px 14px; }
+  .skin-prisma .chat-input-bar { margin-bottom: 8px; border-radius: calc(18px * var(--radius-scale)); padding: 10px 10px 8px 12px; }
+  /* Que modelo + Agente/Chat + enviar quepan siempre en la fila (antes el
+     botón de enviar se salía por la derecha en el móvil). */
+  .skin-prisma .chat-input-bottom { min-width: 0; gap: 6px; }
+  .skin-prisma .chat-input-left { min-width: 0; flex: 0 1 auto; gap: 0; justify-content: flex-start; }
+  .skin-prisma .chat-input-left .input-icon-btn { width: 36px; height: 38px; min-width: 36px; min-height: 38px; padding: 0; margin: 0; flex: none; }
+  .skin-prisma .chat-input-right { min-width: 0; flex: 1 1 auto; justify-content: flex-end; gap: 6px; }
+  .skin-prisma .chat-input-right > .model-picker-wrap { min-width: 0; flex: 0 1 auto; }
+  .skin-prisma .chat-input-right .model-picker-btn { padding: 0 6px; max-width: 100%; }
+  .skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: 34vw; }
+  .skin-prisma .mode-toggle { flex: none; height: 30px; }
+  .skin-prisma .mode-toggle-btn { padding: 0 9px; font-size: 12px; }
+  .skin-prisma .send-btn { flex: none; min-width: 36px; width: 36px; height: 36px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skin-prisma .chat-input-bar,
+  .skin-prisma .icon-rail-btn { transition: none; }
+}
