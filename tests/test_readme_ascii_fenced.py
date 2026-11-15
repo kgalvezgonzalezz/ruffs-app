@@ -10,7 +10,7 @@ README = Path(__file__).resolve().parent.parent / "README.md"
 
 # Distinctive bits of the banner (box-drawing rule + the kaomoji version line).
 _RULE = "─" * 10
-_BANNER_LINE = "RUFFS vers. 1.0"
+_BANNER_LINE = "RUFFS vers. "  # la versión cambia; el texto fijo basta
 
 
 def _fenced_segments(text: str):
@@ -29,6 +29,9 @@ def test_readme_banner_is_inside_a_code_fence():
 
 
 def test_readme_title_stays_a_heading():
-    # The H1 must remain a real heading, not get swallowed into the fence.
-    first = README.read_text(encoding="utf-8").splitlines()[0]
-    assert first.strip() == "# RUFFS"
+    # The title must remain a real heading (Markdown "# RUFFS" or a centred
+    # <h1> under the logo), not get swallowed into the fence.
+    import re
+    text = README.read_text(encoding="utf-8")
+    before_fence = text.split("```", 1)[0]
+    assert re.search(r"^# RUFFS\s*$", before_fence, re.M) or re.search(r"<h1[^>]*>\s*RUFFS\s*</h1>", before_fence)

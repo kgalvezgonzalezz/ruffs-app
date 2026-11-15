@@ -1,4 +1,10 @@
-# RUFFS
+<p align="center">
+  <img src="static/icons/ruffs-logo.png" alt="Logo de RUFFS" width="240">
+</p>
+
+<h1 align="center">RUFFS</h1>
+
+<p align="center"><b>Tu agente compañero</b></p>
 
 ```
 ───────────────────────────────────────────────
@@ -136,3 +142,23 @@ Los tests propios de RUFFS están en `tests/test_ruffs_*.py`.
 
 MIT — ver [LICENSE](LICENSE) (copyright de los autores de Odysseus) y
 [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) para el resto del código de terceros.
+
+## ⭐ Estrellas
+
+<p align="center">
+  <a href="https://github.com/kgalvezgonzalezz/ruffs-app/stargazers">
+    <img alt="Estrellas en GitHub" src="https://img.shields.io/github/stars/kgalvezgonzalezz/ruffs-app?style=for-the-badge&logo=github&label=Estrellas&color=f5c518">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://star-history.com/#kgalvezgonzalezz/ruffs-app&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=kgalvezgonzalezz/ruffs-app&type=Date&theme=dark">
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=kgalvezgonzalezz/ruffs-app&type=Date">
+      <img alt="Evolución de las estrellas de RUFFS" src="https://api.star-history.com/svg?repos=kgalvezgonzalezz/ruffs-app&type=Date" width="640">
+    </picture>
+  </a>
+</p>
+
+<p align="center">Si RUFFS te resulta útil, dale una ⭐ al repositorio.</p>
