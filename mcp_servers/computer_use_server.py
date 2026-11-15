@@ -600,15 +600,91 @@ def _snapshot(app: str | None, surface: str | None, timeout_ms: int = 6000) -> d
     return data["data"]
 
 
+_AX_ROLES = {"AXButton", "AXCheckBox", "AXRadioButton", "AXTextField", "AXTextArea", "AXSecureTextField",
+             "AXPopUpButton", "AXComboBox", "AXMenuItem", "AXMenuButton", "AXMenuBarItem", "AXLink",
+             "AXSlider", "AXIncrementor", "AXDisclosureTriangle", "AXCell", "AXSearchField", "AXTab",
+             "AXSegmentedControl", "AXColorWell", "AXDateField", "AXStepper", "AXToolbarButton"}
+
+
+def _mac_ax_elements(app: str | None = None, budget_s: float = 5.0) -> tuple[str, list]:
+    """macOS: elementos interactivos de la ventana activa leídos directamente con la API
+    de Accesibilidad (sin Agent Desktop). Devuelve (nombre de la app, elementos) con el
+    mismo formato que _collect; posiciones en puntos de pantalla, como mss."""
+    from ApplicationServices import (AXUIElementCopyAttributeValue, AXUIElementCreateApplication,
+                                     AXValueGetValue, kAXValueCGPointType, kAXValueCGSizeType)
+    from AppKit import NSWorkspace
+
+    pid, name = None, ""
+    if app:
+        for ra in NSWorkspace.sharedWorkspace().runningApplications():
+            if str(ra.localizedName() or "").lower() == app.lower():
+                pid, name = int(ra.processIdentifier()), str(ra.localizedName())
+                if ra.isActive():
+                    break
+    if pid is None:
+        front = _front_app()
+        pid, name = front.get("pid"), front.get("app", "")
+    if not pid:
+        raise RuntimeError("No hay una app activa")
+
+    def attr(el, key):
+        err, val = AXUIElementCopyAttributeValue(el, key, None)
+        return val if err == 0 else None
+
+    def frame(el):
+        pos, size = attr(el, "AXPosition"), attr(el, "AXSize")
+        if pos is None or size is None:
+            return None
+        ok1, pt = AXValueGetValue(pos, kAXValueCGPointType, None)
+        ok2, sz = AXValueGetValue(size, kAXValueCGSizeType, None)
+        if not (ok1 and ok2):
+            return None
+        return {"x": float(pt.x), "y": float(pt.y), "width": float(sz.width), "height": float(sz.height)}
+
+    root = AXUIElementCreateApplication(pid)
+    win = attr(root, "AXFocusedWindow") or attr(root, "AXMainWindow")
+    if win is None:
+        raise RuntimeError(f"{name}: sin ventana accesible (¿permiso de Accesibilidad?)")
+    out: list = []
+    stack, seen, t0 = [(win, 0)], 0, time.time()
+    while stack and seen < 4000 and time.time() - t0 < budget_s:
+        el, depth = stack.pop()
+        seen += 1
+        role = str(attr(el, "AXRole") or "")
+        if role in _AX_ROLES:
+            b = frame(el)
+            if b and b["width"] > 2 and b["height"] > 2:
+                label = (attr(el, "AXTitle") or attr(el, "AXDescription") or attr(el, "AXValue")
+                         or attr(el, "AXHelp") or "")
+                out.append({"role": str(attr(el, "AXRoleDescription") or role.removeprefix("AX")),
+                            "name": str(label)[:120], "bounds": b, "ref": None})
+        if depth < 30:
+            for child in reversed(list(attr(el, "AXChildren") or [])):
+                stack.append((child, depth + 1))
+    return name, out
+
+
+def _read_elements(app: str | None, surface: str | None, timeout_ms: int = 6000) -> tuple[str, list]:
+    """(app, elementos interactivos). Agent Desktop primero; en macOS, si falla para la
+    ventana activa, lectura directa por Accesibilidad."""
+    try:
+        data = _snapshot(app, surface, timeout_ms=timeout_ms)
+        elems: list = []
+        _collect(data.get("tree") or {}, elems)
+        return str(data.get("app", "?")), elems
+    except Exception:
+        if IS_MAC and (not surface or surface == "window"):
+            return _mac_ax_elements(app)
+        raise
+
+
 def _elements_at(pt: tuple[int, int]) -> str:
     """Etiqueta del elemento más pequeño bajo un punto de la pantalla (para avisar antes
     de pulsar algo delicado aunque se haga clic por coordenadas)."""
     try:
-        data = _snapshot(None, None, timeout_ms=2500)
+        _, elems = _read_elements(None, None, timeout_ms=2500)
     except Exception:  # noqa: BLE001
         return ""
-    elems: list = []
-    _collect(data.get("tree") or {}, elems)
     best, area = "", None
     for e in elems:
         b = e["bounds"]
@@ -676,9 +752,7 @@ def zoom(x0: int, y0: int, x1: int, y1: int) -> list:
 
 
 def _marks_result(app: str | None, surface: str | None, screen: int | None, prefix: str = "") -> list:
-    data = _snapshot(app, surface)
-    elems: list = []
-    _collect(data.get("tree") or {}, elems)
+    app_name, elems = _read_elements(app, surface)
     img, v = _capture(screen, cursor=False)
     seen, marks, lines = set(), {}, []
     d = ImageDraw.Draw(img)
@@ -711,7 +785,7 @@ def _marks_result(app: str | None, surface: str | None, screen: int | None, pref
         marks[n] = {"x": cx, "y": cy, "name": e["name"], "role": e["role"]}
         lines.append(f"{n}. [{e['role']}] {e['name'] or '(sin nombre)'} — ({cx},{cy})")
     _state["marks"] = marks
-    text = (prefix + f"App: {data.get('app', '?')}. {len(marks)} elementos numerados "
+    text = (prefix + f"App: {app_name}. {len(marks)} elementos numerados "
             "(usa click(element=N) o sus coordenadas):\n" + "\n".join(lines))
     return [_jpeg(img), text[:12000]]
 

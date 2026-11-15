@@ -136,3 +136,19 @@ def test_focused_window_id_picks_active_window_of_front_app(cu, monkeypatch):
     assert cu._focused_window_id() == "w-2"
     monkeypatch.setattr(cu, "_ad_run", lambda *a, **k: {"ok": False, "error": {"message": "x"}})
     assert cu._focused_window_id() is None
+
+
+def test_mac_falls_back_to_accessibility_when_agent_desktop_fails(cu, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("Global application window inventory did not stabilize")
+    monkeypatch.setattr(cu, "_snapshot", boom)
+    monkeypatch.setattr(cu, "IS_MAC", True)
+    fake = [{"role": "botón", "name": "Enviar", "bounds": {"x": 1, "y": 2, "width": 30, "height": 20}, "ref": None}]
+    monkeypatch.setattr(cu, "_mac_ax_elements", lambda app=None: ("Python", fake))
+    assert cu._read_elements(None, None) == ("Python", fake)
+    assert cu._read_elements(None, "window") == ("Python", fake)
+    with pytest.raises(RuntimeError):
+        cu._read_elements(None, "dock")            # superficies del sistema: sin plan B
+    monkeypatch.setattr(cu, "IS_MAC", False)
+    with pytest.raises(RuntimeError):
+        cu._read_elements(None, None)              # en Windows se informa el error
