@@ -207,6 +207,58 @@ class SkillsManager:
         sk.path = path
         return path
 
+    # RUFFS: importación en bloque de skills ya escritas (formato SKILL.md, p. ej.
+    # las de Claude/Anthropic o las exportadas de otro RUFFS). Copia también los
+    # archivos de referencia de cada carpeta.
+    _IMPORT_MAX_FILE = 5 * 1024 * 1024
+    _IMPORT_MAX_TOTAL = 50 * 1024 * 1024
+
+    def import_skill_folder(self, src_dir: str, owner: Optional[str] = None,
+                            status: Optional[str] = "published", overwrite: bool = False,
+                            existing_names: Optional[set] = None) -> Dict:
+        """Importa una carpeta que contiene SKILL.md. Devuelve
+        {"name", "status": "imported"|"skipped"|"error", "detail"}."""
+        import shutil
+        md_path = os.path.join(src_dir, "SKILL.md")
+        try:
+            with open(md_path, encoding="utf-8-sig") as f:
+                sk = Skill.from_markdown(f.read(), path=None)
+        except Exception as e:  # noqa: BLE001
+            return {"name": os.path.basename(src_dir), "status": "error", "detail": f"SKILL.md inválido: {e}"}
+        if not sk.name or sk.name == "skill":
+            sk.name = slugify(os.path.basename(os.path.normpath(src_dir)), fallback="skill")
+        names = existing_names if existing_names is not None else {x.get("name") for x in self.load(owner=owner)}
+        if sk.name in names and not overwrite:
+            return {"name": sk.name, "status": "skipped", "detail": "ya existe"}
+        if status:
+            sk.status = status
+        sk.owner = owner or sk.owner
+        if not sk.source or sk.source == "learned":
+            sk.source = "imported"
+        dest = self._skill_dir(sk.category or "general", sk.name)
+        os.makedirs(dest, exist_ok=True)
+        total = 0
+        src_real = os.path.realpath(src_dir)
+        for base, dirs, files in os.walk(src_dir, followlinks=False):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
+            for fn in files:
+                if fn == "SKILL.md" and os.path.normpath(base) == os.path.normpath(src_dir):
+                    continue
+                src = os.path.join(base, fn)
+                if os.path.islink(src) or not os.path.realpath(src).startswith(src_real):
+                    continue
+                size = os.path.getsize(src)
+                if size > self._IMPORT_MAX_FILE or total + size > self._IMPORT_MAX_TOTAL:
+                    continue
+                rel = os.path.relpath(src, src_dir)
+                target = os.path.join(dest, rel)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copyfile(src, target)
+                total += size
+        self._write_skill(sk)
+        names.add(sk.name)
+        return {"name": sk.name, "status": "imported", "detail": sk.description[:120]}
+
     def backfill_owner(self, primary_owner: str, valid_owners: Optional[set[str]] = None) -> int:
         """Assign legacy/unclaimed skill files to the primary owner.
 

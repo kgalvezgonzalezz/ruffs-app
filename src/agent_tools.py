@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Constants (kept here — sub-modules import from here)
 # ---------------------------------------------------------------------------
-# RUFFS: configurable (RUFFS_AGENT_MAX_ROUNDS, 60 por defecto). Odysseus usaba
+# RUFFS: configurable (RUFFS_AGENT_MAX_ROUNDS, 200 por defecto). Odysseus usaba
 # 20 fijo y, al agotarlas, el agente terminaba sin avisar a mitad de la tarea.
 from src.ruffs_config import AGENT_MAX_ROUNDS as MAX_AGENT_ROUNDS
 SHELL_TIMEOUT = 60

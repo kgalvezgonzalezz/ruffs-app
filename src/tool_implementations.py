@@ -638,6 +638,12 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
       publish {name}             — Flip status: draft -> published.
       delete {name}              — Remove the skill directory.
       search {query}             — Relevance match on published skills.
+      import {path, status?, overwrite?}
+                                 — RUFFS: import EVERY skill under a folder
+                                   (each subfolder with a SKILL.md, plus its
+                                   reference files) in ONE call.
+      add_many {skills: [{...add args...}, ...]}
+                                 — RUFFS: create many skills in ONE call.
     """
     try:
         args = _parse_tool_args(content)
@@ -741,6 +747,72 @@ async def do_manage_skills(content: str, owner: Optional[str] = None) -> Dict:
                 f"then publish with action='publish', name='{entry['name']}'."
             )
         return {"results": f"Created skill `{entry['name']}` — {entry.get('description','')}{verify_hint}"}
+
+    if action in ("import", "import_folder", "import_dir"):
+        # RUFFS: importación en bloque — una llamada para cientos de skills.
+        raw = (args.get("path") or args.get("folder") or "").strip()
+        if not raw:
+            return {"error": "path (folder with SKILL.md files) is required for import", "exit_code": 1}
+        try:
+            from src.tool_execution import _resolve_tool_path
+            folder = _resolve_tool_path(raw)
+        except ValueError as e:
+            return {"error": f"import: {e}", "exit_code": 1}
+        if os.path.isfile(folder) and os.path.basename(folder) == "SKILL.md":
+            folder = os.path.dirname(folder)
+        if not os.path.isdir(folder):
+            return {"error": f"import: {raw!r} is not a folder", "exit_code": 1}
+        dirs = []
+        for base, subdirs, files in os.walk(folder, followlinks=False):
+            subdirs[:] = [d for d in subdirs if not d.startswith(".") and d not in ("__pycache__", "node_modules")]
+            if "SKILL.md" in files:
+                dirs.append(base)
+                subdirs[:] = []  # las subcarpetas de una skill son sus referencias
+            if len(dirs) >= 2000:
+                break
+        if not dirs:
+            return {"error": f"import: no SKILL.md found under {raw!r}", "exit_code": 1}
+        status = args.get("status") or "published"
+        overwrite = bool(args.get("overwrite"))
+        names = {x.get("name") for x in sm.load(owner=owner)}
+        done = {"imported": [], "skipped": [], "error": []}
+        for d in sorted(dirs):
+            r = sm.import_skill_folder(d, owner=owner, status=status, overwrite=overwrite, existing_names=names)
+            done[r["status"]].append(r)
+        try:
+            from src.event_bus import fire_event
+            fire_event("skill_added", owner)
+        except Exception:
+            logger.debug("skill_added event dispatch failed", exc_info=True)
+        lines = [f"Imported {len(done['imported'])} skill(s), skipped {len(done['skipped'])} "
+                 f"(already existed), {len(done['error'])} error(s) — from {len(dirs)} folder(s)."]
+        if done["imported"]:
+            lines.append("Imported: " + ", ".join(r["name"] for r in done["imported"][:300]))
+        if done["skipped"]:
+            lines.append("Skipped (exist; pass overwrite=true to replace): "
+                         + ", ".join(r["name"] for r in done["skipped"][:300]))
+        for r in done["error"][:50]:
+            lines.append(f"Error in {r['name']}: {r['detail']}")
+        return {"results": "\n".join(lines)}
+
+    if action in ("add_many", "bulk_add"):
+        items = args.get("skills")
+        if not isinstance(items, list) or not items:
+            return {"error": "skills (non-empty list of add-arguments) is required for add_many", "exit_code": 1}
+        created, failed = [], []
+        for item in items[:500]:
+            if not isinstance(item, dict):
+                failed.append("(not an object)")
+                continue
+            res = await do_manage_skills(json.dumps({**item, "action": "add"}), owner=owner)
+            (failed if "error" in res else created).append(
+                f"{item.get('name', '?')}: {res.get('error')}" if "error" in res else str(item.get("name", "?")))
+        out = f"Created {len(created)} skill(s), {len(failed)} failed."
+        if created:
+            out += "\nCreated: " + ", ".join(created)
+        if failed:
+            out += "\nFailed: " + "; ".join(failed[:50])
+        return {"results": out}
 
     if action == "edit":
         if not name:

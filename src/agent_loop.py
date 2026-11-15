@@ -289,7 +289,7 @@ Generate an image. Line 1 = description, line 2 = model name, line 3 = WxH (e.g.
     "list_models": "- ```list_models``` — Show all available AI models across all endpoints. Use when user asks what models are available.",
     "manage_session": "- ```manage_session``` — Rename, archive, delete, fork, switch, or `list` chats (the UI calls them 'chats'; 'session' is internal). Line 1 = action (list/switch/rename/archive/unarchive/delete/important/unimportant/truncate/fork), Line 2 = exact chat id from `list_sessions` (or `current` where supported). For delete/archive/truncate, always list first and reuse the exact id; never invent placeholder ids. `switch`/`open` returns a clickable anchor link the user can tap to open the chat — use for \"open my X chat\".",
     "manage_memory": "- ```manage_memory``` — Manage the user's persistent memory (facts, identity, preferences, context that persists across chats). Line 1 = action (list/add/edit/delete/search), rest = content. Use when user says 'remember this', states identity facts like 'my name is <name>' / 'call me <name>' / 'I live in <place>', or asks about stored memories.",
-    "manage_skills": "- ```manage_skills``` — Skill registry (SKILL.md format). Args (JSON): {\"action\": \"list|view|view_ref|search|add|edit|patch|publish|delete\", ...}. `list` returns the index of available skills (published + teacher-escalation drafts); `view name=foo` fetches the full SKILL.md; `view_ref name=foo path=...` loads a reference file under the skill directory. For `add`, provide an explicit kebab-case `name` and only report the exact returned name, because storage may normalize or dedupe it. Use this BEFORE doing domain work — there may already be a procedure (published or draft) that prescribes the correct steps. Drafts written by the teacher loop are authoritative guidance even though they're not yet published.",
+    "manage_skills": "- ```manage_skills``` — Skill registry (SKILL.md format). Args (JSON): {\"action\": \"list|view|view_ref|search|add|add_many|import|edit|patch|publish|delete\", ...}. To create or import MANY skills use ONE call: `import` with {\"path\": \"folder\"} imports every subfolder that has a SKILL.md (plus its reference files); `add_many` with {\"skills\": [ {add args}, ... ]} creates many at once — never loop add one by one. `list` returns the index of available skills (published + teacher-escalation drafts); `view name=foo` fetches the full SKILL.md; `view_ref name=foo path=...` loads a reference file under the skill directory. For `add`, provide an explicit kebab-case `name` and only report the exact returned name, because storage may normalize or dedupe it. Use this BEFORE doing domain work — there may already be a procedure (published or draft) that prescribes the correct steps. Drafts written by the teacher loop are authoritative guidance even though they're not yet published.",
     "manage_tasks": "- ```manage_tasks``` — Create and manage scheduled background tasks (recurring AI jobs). Args (JSON): {\"action\": \"list|create|edit|delete|pause|resume|run\", ...}",
     "manage_endpoints": "- ```manage_endpoints``` — Add, remove, or configure AI model API endpoints. Args (JSON): {\"action\": \"list|add|delete|enable|disable\", ...}. Use when user wants to add a new AI provider.",
     "manage_mcp": "- ```manage_mcp``` — Manage MCP (Model Context Protocol) tool servers — external tools that extend your capabilities. Args (JSON): {\"action\": \"list|add|delete|reconnect|list_tools\", ...}",
@@ -1698,6 +1698,8 @@ async def stream_agent_loop(
     _ruffs_cost = 0.0          # RUFFS: coste acumulado del turno (OpenRouter)
     _ruffs_cached_tokens = 0   # RUFFS: tokens de prompt servidos desde caché
     _ruffs_rounds_exhausted = False
+    _ruffs_cost_capped = False  # RUFFS: pausado por el tope de gasto del mensaje
+    from src.ruffs_config import AGENT_MAX_COST_USD as _RUFFS_MAX_COST
     total_tool_calls = 0  # for budget enforcement
 
     # Loop-breaker state. Small models (e.g. deepseek-v4-flash) can get
@@ -2471,6 +2473,21 @@ async def stream_agent_loop(
                              round_reasoning=round_reasoning,
                              images=round_images if (round_images and _tool_images_ok(model, endpoint_url)) else None)
 
+        # RUFFS: tope de gasto por mensaje. Se comprueba entre rondas (los
+        # resultados de esta ya están en el historial) para pausar limpio.
+        if _RUFFS_MAX_COST > 0 and _ruffs_cost >= _RUFFS_MAX_COST:
+            _ruffs_cost_capped = True
+            logger.warning(f"[agent] tope de gasto alcanzado: ${_ruffs_cost:.4f} >= ${_RUFFS_MAX_COST:.2f}; turno pausado")
+            _cap_note = (
+                f"\n\n> ⏸️ **Agente en pausa:** este mensaje ya gastó ${_ruffs_cost:.2f} "
+                f"(tope por mensaje: ${_RUFFS_MAX_COST:.2f}). Escribe «continúa» y seguiré "
+                "desde este punto (recuerdo lo que ya hice). El tope se cambia con "
+                "RUFFS_AGENT_MAX_COST_USD en el archivo .env."
+            )
+            yield f'data: {json.dumps({"delta": _cap_note})}\n\n'
+            full_response += _cap_note
+            break
+
         # Emit agent_step event
         yield (
             f'data: {json.dumps({"type": "agent_step", "round": round_num + 1})}\n\n'
@@ -2526,6 +2543,8 @@ async def stream_agent_loop(
         metrics["cached_input_tokens"] = _ruffs_cached_tokens
     if _ruffs_rounds_exhausted:
         metrics["paused_at_round_limit"] = True
+    if _ruffs_cost_capped:
+        metrics["paused_at_cost_limit"] = True
     if _ruffs_cost > 0 or _ruffs_cached_tokens:
         logger.info(f"[agent] coste del turno: ${_ruffs_cost:.6f} (caché: {_ruffs_cached_tokens} tokens)")
     yield f"data: {json.dumps({'type': 'metrics', 'data': metrics})}\n\n"

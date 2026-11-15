@@ -112,7 +112,8 @@ Las opciones de RUFFS se ajustan en `.env` (todas documentadas en
 | `RUFFS_DEFAULT_MODEL` | `deepseek/deepseek-v4-flash` | Modelo por defecto si no hay otro elegido |
 | `RUFFS_AUTO_CONTINUE` / `_MAX` | `true` / `4` | Continuación automática de respuestas cortadas |
 | `RUFFS_MAX_OUTPUT_TOKENS` | `16384` | Tope de tokens de salida por respuesta |
-| `RUFFS_AGENT_MAX_ROUNDS` | `60` | Rondas del agente antes de pausar |
+| `RUFFS_AGENT_MAX_ROUNDS` | `200` | Rondas del agente antes de pausar |
+| `RUFFS_AGENT_MAX_COST_USD` | `1.0` | Tope de gasto por mensaje en dólares (0 = sin tope); al alcanzarlo, pausa |
 | `RUFFS_TOOL_MEMORY` | `true` | Memoria de herramientas entre turnos |
 | `RUFFS_PROMPT_CACHE` | `true` | Caché de prompts para `anthropic/*` en OpenRouter |
 | `RUFFS_ENABLE_LOCAL_MODELS` | `false` | Reactiva el Cookbook (modelos locales) |

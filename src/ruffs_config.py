@@ -60,8 +60,22 @@ PROMPT_CACHE_ENABLED = _env_bool("RUFFS_PROMPT_CACHE", True)
 PROMPT_CACHE_MIN_CHARS = _env_int("RUFFS_PROMPT_CACHE_MIN_CHARS", 4000, minimum=0)
 
 # ── Agente ──
-# Odysseus cortaba el agente en silencio a las 20 rondas.
-AGENT_MAX_ROUNDS = _env_int("RUFFS_AGENT_MAX_ROUNDS", 60, minimum=1)
+# Odysseus cortaba el agente en silencio a las 20 rondas. RUFFS: 200 (tareas
+# largas como importar cientos de elementos); la protección real es el tope de
+# gasto de abajo y el detector de bucles del agente.
+AGENT_MAX_ROUNDS = _env_int("RUFFS_AGENT_MAX_ROUNDS", 200, minimum=1)
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Tope de gasto por mensaje (USD, coste real que informa OpenRouter). Al
+# alcanzarlo el agente se pausa y dice cómo seguir ("continúa"). 0 = sin tope.
+AGENT_MAX_COST_USD = _env_float("RUFFS_AGENT_MAX_COST_USD", 1.0)
 
 # Resumen de herramientas de turnos anteriores que se reinyecta al modelo para
 # que, al pedirle "continúa", no tenga que volver a leer ni verificar todo.
