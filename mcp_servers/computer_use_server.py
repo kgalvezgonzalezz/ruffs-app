@@ -529,26 +529,40 @@ def _snapshot(app: str | None, surface: str | None, timeout_ms: int = 6000) -> d
     cmd = _agent_desktop_cmd()
     if not cmd:
         raise RuntimeError("No se encontró Agent Desktop (hace falta Node.js; RUFFS lo instala).")
-    args = cmd + ["snapshot", "--include-bounds", "-i", "--compact", "--timeout-ms", str(timeout_ms)]
-    if app:
-        args += ["--app", app]
-    if surface:
-        args += ["--surface", surface]
+    def build(t_ms: int, app_name: str | None) -> list[str]:
+        a = cmd + ["snapshot", "--include-bounds", "-i", "--compact", "--timeout-ms", str(t_ms)]
+        if app_name:
+            a += ["--app", app_name]
+        if surface:
+            a += ["--surface", surface]
+        return a
+
+    args = build(timeout_ms, app)
     kw: dict = {"creationflags": 0x08000000} if IS_WINDOWS else {}
     # Agent Desktop exige crear él mismo su carpeta privada (con sus permisos);
     # si una anterior quedó con permisos que no acepta, se rehace.
     home = os.path.join(DATA_DIR, "agent-desktop-home")
-    for attempt in range(2):
+    fixed_home = slowed = False
+    for _ in range(3):
         res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                             timeout=60, stdin=subprocess.DEVNULL,
+                             timeout=90, stdin=subprocess.DEVNULL,
                              env={**os.environ, "AGENT_DESKTOP_HOME": home}, **kw)
         try:
             data = json.loads(res.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
             raise RuntimeError(f"Agent Desktop no respondió bien: {(res.stderr or res.stdout)[-400:]}")
         msg = (data.get("error") or {}).get("message", "")
-        if not data.get("ok") and attempt == 0 and ("principal" in msg or "DACL" in msg or "owner" in msg):
+        if data.get("ok"):
+            break
+        if not fixed_home and ("principal" in msg or "DACL" in msg or "owner" in msg):
+            fixed_home = True
             shutil.rmtree(home, ignore_errors=True)
+            continue
+        if not slowed and re.search(r"stabiliz|deadline|timed? ?out", msg, re.I):
+            # Equipo lento (o muchas ventanas): más tiempo y solo la app activa.
+            slowed = True
+            front = app or (_front_app().get("app") or "").removesuffix(".exe") or None
+            args = build(max(timeout_ms, 20000), front)
             continue
         break
     if not data.get("ok"):
