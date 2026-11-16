@@ -46,6 +46,7 @@ IS_WINDOWS = os.name == "nt"
 IS_MAC = sys.platform == "darwin"
 
 _install_lock = threading.Lock()
+_last_error = ""
 _install_state: Dict[str, Any] = {"state": "idle"}
 
 
@@ -91,7 +92,8 @@ def _cache_path() -> str:
 def _fetch_latest(repo: str) -> Dict[str, Any]:
     req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest",
                                  headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+    from src.https import urlopen
+    with urlopen(req, timeout=15) as r:
         rel = json.loads(r.read().decode("utf-8"))
     assets = {}
     for a in rel.get("assets") or []:
@@ -126,7 +128,9 @@ def latest_release(force: bool = False) -> Optional[Dict[str, Any]]:
             json.dump(rel, f, ensure_ascii=False)
         return rel
     except Exception as e:  # sin conexión o límite de GitHub: lo último que se supo
-        logger.info(f"[update] no se pudo consultar GitHub: {e}")
+        global _last_error
+        _last_error = str(e)[:300]
+        logger.warning(f"[update] no se pudo consultar GitHub: {e}")
         return cache if cache and cache.get("repo") == repo else None
 
 
@@ -159,6 +163,8 @@ def update_info(request: Optional[Request] = None, force: bool = False) -> Dict[
         return info
     rel = latest_release(force=force)
     if not rel:
+        if _last_error:
+            info["error"] = "No se pudo consultar GitHub: " + _last_error
         return info
     latest = rel.get("tag", "").lstrip("vV")
     asset = (rel.get("assets") or {}).get(_platform_key() or "")
@@ -183,7 +189,8 @@ def update_info(request: Optional[Request] = None, force: bool = False) -> Dict[
 def _download(url: str, dest: str, sha256: Optional[str]) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     h = hashlib.sha256()
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest, "wb") as f:
+    from src.https import urlopen
+    with urlopen(req, timeout=60) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         done = 0
         while True:

@@ -147,7 +147,10 @@ export async function checkForUpdates({ manual = false } = {}) {
   ensureButton(info);
   if (!info.installed || !info.enabled) return;
   setBadge(info.newer);
-  if (!info.newer) { if (manual) toast(`Tienes la última versión de RUFFS (v${info.current}).`); return; }
+  if (!info.newer) {
+    if (manual) toast(info.error ? info.error : `Tienes la última versión de RUFFS (v${info.current}).`);
+    return;
+  }
   if (!manual) {
     if (read(SKIP_KEY) === info.latest) return;
     if (Number(read(SNOOZE_KEY) || 0) > Date.now()) return;

@@ -170,19 +170,36 @@ def find_java() -> str | None:
 
 # ─── Instalación (Ghidra + JDK dentro de RUFFS) ──────────────────────────────
 
+def _ssl_context():
+    """Certificados del sistema + certifi (ver src/https.py): sin esto, en algunos
+    equipos GitHub falla con CERTIFICATE_VERIFY_FAILED."""
+    import ssl
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        pass
+    return ctx
+
+
+def _urlopen(req, timeout):
+    return urllib.request.urlopen(req, timeout=timeout, context=_ssl_context())
+
+
 def _get_json(url: str) -> object:
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token and url.startswith("https://api.github.com/"):
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with _urlopen(req, 60) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def _get_text(url: str) -> tuple[str, str]:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with _urlopen(req, 60) as r:
         return r.read().decode("utf-8", "replace"), r.geturl()
 
 
@@ -226,7 +243,7 @@ def _latest_ghidra() -> tuple[str, str, str | None, str]:
 def _download(url: str, dest: str, sha256: str | None, label: str) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     h = hashlib.sha256()
-    with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+    with _urlopen(req, 120) as r, open(dest, "wb") as f:
         total = int(r.headers.get("Content-Length") or 0)
         done = 0
         while True:

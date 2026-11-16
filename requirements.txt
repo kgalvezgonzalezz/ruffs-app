@@ -50,3 +50,5 @@ pytest-asyncio
 
 # Browser automation for Playwright MCP server (built-in)
 playwright>=1.40.0
+# Certificados para HTTPS (actualizaciones, descargas de MCP): ver src/https.py
+certifi
