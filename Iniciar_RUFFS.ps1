@@ -17,8 +17,10 @@
     powershell -ExecutionPolicy Bypass -File .\Iniciar_RUFFS.ps1 -Window      # ventana propia
     powershell -ExecutionPolicy Bypass -File .\Iniciar_RUFFS.ps1 -SetupOnly   # solo instalar
 
-  -Window abre RUFFS en su propia ventana de escritorio (ruffs_desktop.py);
-  al cerrarla se detiene el servidor. -SetupOnly prepara Python y las
+  -Window abre RUFFS en su propia ventana de escritorio (ruffs_desktop.py).
+  Al cerrarla RUFFS sigue encendido (p. ej. para el móvil): vuelve a abrir el
+  acceso directo, o pulsa Enter en esta consola, para recuperar la ventana;
+  cierra la consola o pulsa Ctrl+C para apagarlo. -SetupOnly prepara Python y las
   dependencias y sale (lo usa el instalador RUFFS-Setup.exe). Si existe
   tools\uv.exe (copia instalada), se usa ese uv y Python se guarda en
   tools\python, así no hace falta tener nada instalado.
@@ -87,6 +89,18 @@ if ($SetupOnly) {
 $env:UV_HTTP_TIMEOUT = "180"   # conexiones lentas: no cortar la descarga de Python
 
 $venvPy = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+
+# Si RUFFS ya está en marcha (cerraste la ventana pero sigue encendido, p. ej.
+# para el móvil), -Window solo vuelve a abrir la ventana, sin otro servidor.
+if ($Window -and -not $SetupOnly -and (Test-Path $venvPy)) {
+    $running = $false
+    try { Invoke-WebRequest -Uri ("http://127.0.0.1:{0}/login" -f $Port) -UseBasicParsing -TimeoutSec 2 | Out-Null; $running = $true } catch {}
+    if ($running) {
+        $env:PYTHONUTF8 = "1"
+        & $venvPy ruffs_desktop.py --attach --port $Port
+        exit 0
+    }
+}
 
 # uv: el incluido en la instalación (tools\uv.exe) o el del sistema.
 $bundledUv = Join-Path $PSScriptRoot "tools\uv.exe"
@@ -293,7 +307,7 @@ if ($OpenBrowser -and -not $NoBrowser) {
 }
 
 if ($Window) {
-    Write-Host "RUFFS se abrirá en su propia ventana. Ciérrala para detenerlo."
+    Write-Host "RUFFS se abrirá en su propia ventana. Cerrarla no lo apaga: cierra esta consola o pulsa Ctrl+C."
     & $venvPy ruffs_desktop.py --host $BindHost --port $Port
 } else {
     & $venvPy -m uvicorn app:app --host $BindHost --port $Port

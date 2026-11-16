@@ -375,7 +375,35 @@ class McpManager:
         ok = sum(1 for r in results if r is True)
         if servers:
             logger.info(f"MCP: {ok}/{len(servers)} servidores conectados")
+        # RUFFS: los activados que fallaron al arrancar (p. ej. npx/uvx que aún
+        # descargaban, o el equipo iba lento) se reintentan solos un par de
+        # veces en segundo plano, sin tener que pulsar «Reconectar».
+        failed = [c for c, r in zip(servers, results) if r is not True]
+        if failed:
+            asyncio.create_task(self._retry_failed_on_startup(failed))
         return ok
+
+    async def _retry_failed_on_startup(self, servers, delays=(20, 90)):
+        pending = list(servers)
+        for delay in delays:
+            if not pending:
+                return
+            await asyncio.sleep(delay)
+            still = []
+            for cfg in pending:
+                sid = cfg.get("server_id")
+                if sid in self._connected_ids:
+                    continue
+                try:
+                    if await self.connect_server(**cfg):
+                        logger.info(f"MCP: {cfg.get('name')} conectado al reintentar")
+                        continue
+                except Exception as e:  # noqa: BLE001
+                    logger.debug(f"MCP reintento {cfg.get('name')}: {e}")
+                still.append(cfg)
+            pending = still
+        for cfg in pending:
+            logger.warning(f"MCP: {cfg.get('name')} sigue sin conectar tras los reintentos")
 
     async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).

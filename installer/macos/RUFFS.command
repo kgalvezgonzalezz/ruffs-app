@@ -148,7 +148,7 @@ fi
 
 # 4. Arranque
 step "Iniciando RUFFS"
-echo "Esta ventana es la consola de RUFFS. Cierra la ventana de RUFFS para detenerlo."
+echo "Esta ventana es la consola de RUFFS. Cerrar la ventana de RUFFS no lo apaga (vuelve a abrir RUFFS o pulsa Enter aquí para recuperarla); para apagarlo cierra esta ventana o pulsa Ctrl+C."
 if grep -q '^APP_BIND=0.0.0.0' .env 2>/dev/null; then
   PORT="$(grep '^APP_PORT=' .env | cut -d= -f2)"; PORT="${PORT:-7100}"
   echo "RUFFS acepta conexiones desde otros dispositivos (Tailscale / tu red), con inicio de sesión."

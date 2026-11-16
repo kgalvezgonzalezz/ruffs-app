@@ -221,6 +221,13 @@ def mac_app_path() -> Optional[str]:
 def _exit_soon(delay: float = 2.5) -> None:
     def _bye():
         logger.info("[update] cerrando RUFFS para instalar la actualización")
+        # La ventana va en su propio proceso (ruffs_desktop.py): cerrarla también.
+        main = sys.modules.get("__main__")
+        try:
+            if main is not None and hasattr(main, "close_window"):
+                main.close_window()
+        except Exception:  # noqa: BLE001
+            pass
         os._exit(0)
     threading.Timer(delay, _bye).start()
 

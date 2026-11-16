@@ -310,9 +310,17 @@ def setup_mcp_routes(mcp_manager: McpManager):
                 url=srv.url,
             )
 
+            # RUFFS: si el usuario lo conecta y conecta bien, queda activado para
+            # que RUFFS lo vuelva a conectar solo en el próximo arranque (antes
+            # «Reconectar» no lo guardaba y había que conectarlo cada vez).
+            if connected and not srv.is_enabled:
+                srv.is_enabled = True
+                db.commit()
+
             status = mcp_manager.get_server_status(server_id)
             return {
                 "connected": connected,
+                "is_enabled": bool(srv.is_enabled),
                 "status": status.get("status", "disconnected"),
                 "tool_count": status.get("tool_count", 0),
                 "error": status.get("error"),

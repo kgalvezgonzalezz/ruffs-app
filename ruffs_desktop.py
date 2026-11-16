@@ -2,10 +2,13 @@
 
 Arranca el servidor de RUFFS y lo muestra en una ventana propia (pywebview:
 WebView2 en Windows, WKWebView en macOS), sin abrir pestañas del navegador.
-Al cerrar la ventana se detiene el servidor.
+Al cerrar la ventana RUFFS sigue encendido (para el móvil); Enter en la consola
+o volver a abrir el acceso directo reabre la ventana, y Ctrl+C o cerrar la
+consola lo apaga (con --stop-on-close se apaga al cerrar la ventana).
 
     python ruffs_desktop.py                 # servidor + ventana
     python ruffs_desktop.py --no-window     # solo servidor (como uvicorn)
+    python ruffs_desktop.py --attach        # solo la ventana (RUFFS ya en marcha)
     python ruffs_desktop.py --smoke 8       # abre la ventana 8 s y sale (pruebas)
 
 Puerto y dirección: --port/--host, o APP_PORT/APP_BIND en .env (7100 /
@@ -66,12 +69,67 @@ def _webview_storage() -> str:
     return path
 
 
+def _open_window(url: str, smoke: float = 0) -> None:
+    """Show RUFFS in a native window; returns when the window is closed."""
+    import webview  # pywebview
+
+    # Window icon: Windows needs an .ico; macOS takes the app bundle's icon.
+    icon = os.path.join(HERE, "ruffs.ico") if os.name == "nt" else ""
+    window = webview.create_window(
+        "RUFFS", url, width=1320, height=860, min_size=(900, 600),
+        background_color="#06071a", text_select=True,
+    )
+    if smoke:
+        threading.Timer(smoke, window.destroy).start()
+    start_kwargs = dict(private_mode=False, storage_path=_webview_storage())
+    if icon and os.path.exists(icon):
+        start_kwargs["icon"] = icon
+    try:
+        webview.start(**start_kwargs)
+    except TypeError:  # older pywebview without `icon`
+        start_kwargs.pop("icon", None)
+        webview.start(**start_kwargs)
+
+
+def _window_process(url_port: int, smoke: float = 0) -> int:
+    """Run the window in its own process (the GUI loop can only start once
+    per process, so each reopen is a fresh one)."""
+    import subprocess
+    cmd = [sys.executable, os.path.abspath(__file__), "--attach", "--port", str(url_port)]
+    if smoke:
+        cmd += ["--smoke", str(smoke)]
+    global WINDOW_PROC
+    WINDOW_PROC = subprocess.Popen(cmd, cwd=HERE)
+    try:
+        return WINDOW_PROC.wait()
+    finally:
+        WINDOW_PROC = None
+
+
+# Proceso de la ventana abierta (lo cierra, p. ej., la instalación de una
+# actualización antes de cerrar RUFFS).
+WINDOW_PROC = None
+
+
+def close_window() -> None:
+    proc = WINDOW_PROC
+    if proc is not None and proc.poll() is None:
+        try:
+            proc.terminate()
+        except OSError:
+            pass
+
+
 def main() -> int:
     host_d, port_d = _env_defaults()
     ap = argparse.ArgumentParser(description="RUFFS en una ventana de escritorio")
     ap.add_argument("--host", default=host_d)
     ap.add_argument("--port", type=int, default=port_d)
     ap.add_argument("--no-window", action="store_true", help="solo el servidor")
+    ap.add_argument("--attach", action="store_true",
+                    help="solo la ventana, para un RUFFS que ya está en marcha")
+    ap.add_argument("--stop-on-close", action="store_true",
+                    help="apagar RUFFS al cerrar la ventana")
     ap.add_argument("--smoke", type=float, default=0, help="cerrar la ventana tras N segundos (pruebas)")
     args = ap.parse_args()
 
@@ -79,10 +137,19 @@ def main() -> int:
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
 
-    import uvicorn
-
     view_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     url = f"http://{view_host}:{args.port}"
+
+    if args.attach:
+        try:
+            _open_window(url, args.smoke)
+        except ImportError:
+            print(f"[RUFFS] pywebview no está instalado: abre {url} en tu navegador.", flush=True)
+            return 1
+        return 0
+
+    import uvicorn
+
     config = uvicorn.Config("app:app", host=args.host, port=args.port, log_level="info")
     server = uvicorn.Server(config)
 
@@ -91,9 +158,9 @@ def main() -> int:
         return 0
 
     try:
-        import webview  # pywebview
+        import webview  # noqa: F401  (pywebview)
     except ImportError:
-        print(f"\n[RUFFS] pywebview no está instalado: abre {url} en tu navegador.\n", flush=True)
+        print(f"[RUFFS] pywebview no está instalado: abre {url} en tu navegador.", flush=True)
         server.run()
         return 0
 
@@ -105,26 +172,35 @@ def main() -> int:
         print("[RUFFS] El servidor no arrancó. Revisa los mensajes de arriba.", flush=True)
         server.should_exit = True
         return 1
-    print("[RUFFS] Listo. Cierra la ventana de RUFFS para detenerlo.", flush=True)
 
-    # Window icon: Windows needs an .ico; macOS takes the app bundle's icon.
-    icon = os.path.join(HERE, "ruffs.ico") if os.name == "nt" else ""
-    window = webview.create_window(
-        "RUFFS", url, width=1320, height=860, min_size=(900, 600),
-        background_color="#06071a", text_select=True,
-    )
-    if args.smoke:
-        threading.Timer(args.smoke, window.destroy).start()
-    start_kwargs = dict(private_mode=False, storage_path=_webview_storage())
-    if icon and os.path.exists(icon):
-        start_kwargs["icon"] = icon
+    stop_on_close = args.stop_on_close or bool(args.smoke)
     try:
-        webview.start(**start_kwargs)
-    except TypeError:  # older pywebview without `icon`
-        start_kwargs.pop("icon", None)
-        webview.start(**start_kwargs)
+        while True:
+            print("[RUFFS] Listo. Abriendo la ventana de RUFFS…", flush=True)
+            _window_process(args.port, args.smoke)
+            if stop_on_close or not t.is_alive():
+                break
+            print(
+                "",
+                "[RUFFS] Ventana cerrada; RUFFS sigue encendido (también desde el móvil por Tailscale).",
+                "        · Pulsa Enter aquí, o vuelve a abrir el acceso directo RUFFS, para reabrir la ventana.",
+                f"        · O entra en {url} desde el navegador.",
+                "        · Cierra esta consola o pulsa Ctrl+C para apagar RUFFS.",
+                "",
+                sep="\n", flush=True,
+            )
+            try:
+                input()
+            except EOFError:  # no console to read from: just keep serving
+                while t.is_alive():
+                    t.join(1)
+                break
+            if not t.is_alive():
+                break
+    except KeyboardInterrupt:
+        pass
 
-    print("[RUFFS] Ventana cerrada; deteniendo el servidor…", flush=True)
+    print("[RUFFS] Deteniendo el servidor…", flush=True)
     server.should_exit = True
     t.join(timeout=15)
     return 0

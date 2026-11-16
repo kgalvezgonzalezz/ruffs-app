@@ -77,12 +77,12 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdi
 Name: "{app}\data"
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; IconFilename: "{app}\ruffs.ico"; Comment: "RUFFS — tu agente compañero"
+Name: "{autoprograms}\{#AppName}"; Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; IconFilename: "{app}\ruffs.ico"; Comment: "RUFFS — tu agente compañero"; Flags: runminimized
 Name: "{autoprograms}\{#AppName} (navegador)"; Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -OpenBrowser"; WorkingDir: "{app}"; IconFilename: "{app}\ruffs.ico"; Comment: "Abre RUFFS en el navegador"
-Name: "{autodesktop}\{#AppName}"; Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; IconFilename: "{app}\ruffs.ico"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; IconFilename: "{app}\ruffs.ico"; Tasks: desktopicon; Flags: runminimized
 
 [Run]
-Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; Description: "{cm:OpenRuffs}"; Flags: postinstall nowait skipifsilent
+Filename: "{#PSExe}"; Parameters: "{#LaunchArgs} -Window"; WorkingDir: "{app}"; Description: "{cm:OpenRuffs}"; Flags: runminimized postinstall nowait skipifsilent
 
 [UninstallRun]
 ; Quita la regla de firewall de RUFFS (si se creó). Pide permiso de administrador.
