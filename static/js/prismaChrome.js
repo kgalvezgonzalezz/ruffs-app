@@ -2,8 +2,8 @@
 //
 // Builds the pieces of the Prisma design that plain CSS can't: the chat
 // header (title + "model · N messages · $cost" + context bar) and the
-// composer toolbar (attach / web / shell / document / incognito, model
-// picker next to the Agent/Chat switch). Everything is applied only while
+// composer toolbar (attach / web / shell / document, model picker next to
+// the Agent/Chat switch; Nobody mode goes in the "more tools" menu). Everything is applied only while
 // <html> has .skin-prisma and is undone when the user switches to Classic,
 // so the original layout stays exactly as it was.
 
@@ -189,7 +189,8 @@ function apply() {
   }
 
   // 2) Composer toolbar, in the order of the design:
-  //    [more] attach · web · shell · document · incognito  …  model · Agent/Chat · send
+  //    [more] attach · web · shell · document  …  model · Agent/Chat · send
+  //    (Nobody mode: inside [more])
   const left = document.querySelector('.chat-input-left');
   const right = document.querySelector('.chat-input-right');
   const webBtn = $('web-toggle-btn');
@@ -201,14 +202,26 @@ function apply() {
     _add(attach, left, webBtn || null);
 
     const doc = _toolBtn('prisma-doc-btn', 'Documents', ICONS.doc, () => { const b = $('overflow-doc-btn'); if (b) b.click(); });
-    const inc = _toolBtn('prisma-incognito-btn', 'Nobody mode — no memory, no history saved', ICONS.eyeoff, () => {
-      const b = $('incognito-btn');
-      if (inc.getAttribute('aria-disabled') === 'true') return;
-      if (b) b.click();
-    });
     const after = bashBtn ? bashBtn.nextSibling : null;
     _add(doc, left, after);
-    _add(inc, left, doc.nextSibling);
+
+    // Nobody mode lives inside the "more tools" menu (^) instead of the
+    // toolbar: on a phone the extra icon crowded the model picker.
+    const menu = $('overflow-menu');
+    const inc = document.createElement('button');
+    inc.type = 'button';
+    inc.id = 'overflow-incognito-btn';
+    inc.className = 'overflow-menu-item';
+    inc.innerHTML = ICONS.eyeoff + '<span>Nobody mode</span><span class="overflow-active-dot"></span>';
+    // Same as the menu's own items: don't steal focus from the message box
+    // (keeps the phone keyboard up), and close the menu after picking.
+    inc.addEventListener('pointerdown', (e) => { e.preventDefault(); });
+    inc.addEventListener('click', () => {
+      if (inc.getAttribute('aria-disabled') !== 'true') { const b = $('incognito-btn'); if (b) b.click(); }
+      const plus = $('overflow-plus-btn');
+      if (plus && !inc.closest('.overflow-menu')?.classList.contains('hidden')) plus.click();
+    });
+    if (menu) _add(inc, menu);
 
     // Mirror on/off state of the proxied controls.
     const syncStates = () => {
@@ -226,6 +239,9 @@ function apply() {
       inc.setAttribute('aria-disabled', locked ? 'true' : 'false');
       inc.title = locked ? 'Nobody mode can be turned on from a new chat'
                          : (incOn ? 'Nobody mode is on — click to turn off' : 'Nobody mode — no memory, no history saved');
+      // Light up the dot on the ^ button when Nobody mode is on (app.js counts
+      // the active items of the menu).
+      document.dispatchEvent(new Event('overflow-state-change'));
     };
     syncStates();
     _observe($('overflow-doc-btn'), { attributes: true, attributeFilter: ['class', 'aria-pressed'] }, syncStates);

@@ -598,6 +598,8 @@ body.bg-pattern-aurora {
 .skin-prisma .input-icon-btn { width: 34px; height: 34px; padding: 0; opacity: 0.62; }
 .skin-prisma .input-icon-btn:hover { opacity: 1; }
 .skin-prisma .input-icon-btn[aria-disabled="true"] { opacity: 0.28; cursor: not-allowed; }
+/* Modo Nobody dentro del menú ^: atenuado cuando el chat ya empezó (solo se activa en un chat nuevo) */
+.skin-prisma .overflow-menu-item[aria-disabled="true"] { opacity: 0.4; cursor: not-allowed; }
 .skin-prisma .input-icon-btn.tool-indicator { width: auto; padding: 0 10px; }
 .skin-prisma .input-icon-btn.active,
 .skin-prisma .input-icon-btn[aria-pressed="true"] {
