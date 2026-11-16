@@ -2243,16 +2243,18 @@ body.bg-pattern-sparkles {
       margin-top: 4px;
     }
     /* Progressive shrinkage: as the chat input bar gets narrow, sacrifice
-       chrome before the typing area. First the Agent/Chat toggle drops out,
-       then the model picker — textarea + send button always stay. Container
-       queries so it responds to *bar width*, not viewport width (the bar
-       can be in a split pane). */
+       chrome before the typing area. The model name shrinks first (see
+       ruffs-prisma.css), then the model picker drops out, and only on a tiny
+       bar the Agent/Chat toggle — textarea + send button always stay.
+       (It used to hide Agent/Chat below 340px, so a phone in portrait never
+       showed it.) Container queries so it responds to *bar width*, not
+       viewport width (the bar can be in a split pane). */
     .chat-input-bar { container-type: inline-size; container-name: chatbar; }
-    @container chatbar (max-width: 340px) {
-      .chat-input-right .mode-toggle { display: none !important; }
-    }
     @container chatbar (max-width: 260px) {
       #model-picker-wrap { display: none !important; }
+    }
+    @container chatbar (max-width: 230px) {
+      .chat-input-right .mode-toggle { display: none !important; }
     }
     .chat-input-left {
       display: flex;

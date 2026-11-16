@@ -631,10 +631,29 @@ body.bg-pattern-aurora {
   .skin-prisma .chat-input-right { min-width: 0; flex: 1 1 auto; justify-content: flex-end; gap: 6px; }
   .skin-prisma .chat-input-right > .model-picker-wrap { min-width: 0; flex: 0 1 auto; }
   .skin-prisma .chat-input-right .model-picker-btn { padding: 0 6px; max-width: 100%; }
-  .skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: 34vw; }
+  .skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: clamp(56px, 24cqi, 170px); }
   .skin-prisma .mode-toggle { flex: none; height: 30px; }
   .skin-prisma .mode-toggle-btn { padding: 0 9px; font-size: 12px; }
   .skin-prisma .send-btn { flex: none; min-width: 36px; width: 36px; height: 36px !important; }
+}
+
+/* El nombre del modelo cede su sitio antes que Agente/Chat: en un móvil en
+   vertical el nombre largo (p. ej. "deepseek-v4.1-flash-1000k") dejaba fuera
+   el botón Agente/Chat. Va por ancho de la barra (container query "chatbar"
+   de style.css), no de la pantalla. */
+@container chatbar (max-width: 400px) {
+  /* Tope generoso: si hay hueco (herramientas plegadas) se ve más nombre; si
+     no, el selector de modelo es lo único de la derecha que se encoge. */
+  .skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: clamp(48px, 36cqi, 150px); min-width: 0; }
+  .skin-prisma .chat-input-right .model-picker-btn { padding: 0 4px; gap: 4px; }
+  .skin-prisma .chat-input-right,
+  .skin-prisma .chat-input-bottom { gap: 4px; }
+  .skin-prisma .mode-toggle-btn { padding: 0 8px; font-size: 11.5px; }
+}
+/* Barra muy estrecha: del modelo queda solo su icono (el menú sigue abriéndose al tocarlo). */
+@container chatbar (max-width: 300px) {
+  .skin-prisma .chat-input-right > .model-picker-wrap { flex-shrink: 0; }
+  .skin-prisma .chat-input-right .model-picker-btn #model-picker-label { max-width: 18px; min-width: 16px; text-overflow: clip; }
 }
 
 @media (prefers-reduced-motion: reduce) {
