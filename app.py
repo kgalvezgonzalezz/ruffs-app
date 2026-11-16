@@ -1384,6 +1384,12 @@ async def _startup_event():
         seed_mcp_catalog()
     except Exception as e:
         logger.warning(f"RUFFS: catálogo de MCP omitido: {e}")
+    # RUFFS: voz gratuita (dictado + lectura) para quien nunca eligió proveedor.
+    try:
+        from src.ruffs_bootstrap import enable_free_voice_once
+        enable_free_voice_once()
+    except Exception as e:
+        logger.warning(f"RUFFS: activación de voz gratuita omitida: {e}")
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.
     try:

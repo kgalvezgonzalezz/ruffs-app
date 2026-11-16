@@ -49,7 +49,7 @@ class TTSService:
         saved = load_settings()
         return {
             "tts_enabled": saved.get("tts_enabled", True),
-            "tts_provider": saved.get("tts_provider", "disabled"),
+            "tts_provider": saved.get("tts_provider", "browser"),
             "tts_model": saved.get("tts_model", "eleven_flash_v2_5"),
             "tts_voice": saved.get("tts_voice", "alloy"),
             "tts_speed": saved.get("tts_speed", "1"),

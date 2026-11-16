@@ -1,11 +1,12 @@
-"""Precarga de OpenRouter desde el archivo .env.
+"""Ajustes iniciales de RUFFS al arrancar.
 
-RUFFS está pensado para trabajar con claves de API. Si ``.env`` define
-``OPENROUTER_API_KEY`` y todavía no hay ningún endpoint de OpenRouter, se crea
-uno al arrancar (la clave se guarda cifrada, igual que desde Ajustes) y, si no
-hay modelo por defecto, se usa ``RUFFS_DEFAULT_MODEL``.
-
-Nunca sobrescribe un endpoint existente ni un modelo por defecto ya elegido.
+- Precarga de OpenRouter desde el archivo .env: RUFFS está pensado para
+  trabajar con claves de API. Si ``.env`` define ``OPENROUTER_API_KEY`` y todavía
+  no hay ningún endpoint de OpenRouter, se crea uno al arrancar (la clave se
+  guarda cifrada, igual que desde Ajustes) y, si no hay modelo por defecto, se
+  usa ``RUFFS_DEFAULT_MODEL``. Nunca sobrescribe un endpoint existente ni un
+  modelo por defecto ya elegido.
+- Voz gratuita (una sola vez): ver ``enable_free_voice_once``.
 """
 
 from __future__ import annotations
@@ -60,3 +61,41 @@ def seed_openrouter_endpoint() -> str | None:
     except Exception as e:  # el endpoint ya está creado; esto es solo comodidad
         logger.warning(f"RUFFS: no se pudo fijar el modelo por defecto: {e}")
     return ep_id
+
+
+VOICE_DEFAULTS_MARKER = "ruffs_free_voice_v1"
+
+
+def enable_free_voice_once() -> bool:
+    """Activa la voz gratuita del dispositivo una sola vez en instalaciones viejas.
+
+    Desde la 1.1.8 el dictado (STT) y la lectura en voz alta (TTS) usan por
+    defecto el proveedor "browser": la voz del teléfono o del navegador, gratis
+    y sin instalar nada. Las instalaciones anteriores guardaron "disabled" en
+    data/settings.json (se guardan todos los valores), así que el cambio de
+    valores por defecto no les llegaría.
+
+    Solo se toca lo que sigue en "disabled" (nunca se eligió proveedor); quien
+    usa Whisper local, Kokoro, Edge, ElevenLabs o una API se queda como está.
+    Deja una marca para no repetirlo: si alguien lo apaga después, sigue apagado.
+    Devuelve True si cambió algo.
+    """
+    from src.settings import load_settings, save_settings
+
+    settings = dict(load_settings())
+    if settings.get(VOICE_DEFAULTS_MARKER):
+        return False
+    changed = []
+    if (settings.get("stt_provider") or "disabled") == "disabled":
+        settings["stt_enabled"] = True
+        settings["stt_provider"] = "browser"
+        changed.append("dictado")
+    if (settings.get("tts_provider") or "disabled") == "disabled":
+        settings["tts_enabled"] = True
+        settings["tts_provider"] = "browser"
+        changed.append("lectura en voz alta")
+    settings[VOICE_DEFAULTS_MARKER] = True
+    save_settings(settings)
+    if changed:
+        logger.info("RUFFS: voz gratuita del dispositivo activada (%s)", ", ".join(changed))
+    return bool(changed)

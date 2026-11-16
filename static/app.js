@@ -3942,6 +3942,20 @@ function startOdysseusApp() {
   
   // Ensure proper initial state
   voiceRecorderModule.init();
+  // Mic button on load: take the STT provider from the server, not only from
+  // this device's localStorage — settings.js syncs it only once Settings is
+  // opened, so a new phone (or the Android app's first run) never showed the
+  // microphone even with Speech to Text turned on.
+  fetch('/api/auth/settings', { credentials: 'same-origin' })
+    .then(r => (r.ok ? r.json() : null))
+    .then(s => {
+      if (!s) return;
+      const eff = s.stt_enabled === false ? 'disabled' : (s.stt_provider || 'disabled');
+      try { localStorage.setItem('sttProvider', eff); } catch (_) {}
+      voiceRecorderModule._sttProvider = eff;
+      if (window._updateSendBtnIcon) window._updateSendBtnIcon();
+    })
+    .catch(() => {});
   if (censorModule) censorModule.init();
 
   // Auto-focus message input on load

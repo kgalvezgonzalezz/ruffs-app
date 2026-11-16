@@ -42,16 +42,21 @@ DEFAULT_SETTINGS = {
     # Public base URL used to build clickable deep-links in outgoing alerts
     # (e.g., urgency alert email). Example: "https://chat.example.com"
     "app_public_url": "",
+    # RUFFS: voz gratuita por defecto. "browser" usa la voz del dispositivo
+    # (en la app de Android, el TextToSpeech del teléfono; en el PC, la del
+    # navegador): no cuesta nada ni necesita instalar nada en el servidor.
     "tts_enabled": True,
-    "tts_provider": "disabled",
+    "tts_provider": "browser",
     "tts_model": "tts-1",
     "tts_voice": "alloy",
     "tts_speed": "1",
     "tts_auto_play": False,
     "tts_wake_word": "RUFFS",
     "tts_wake_word_enabled": False,
-    "stt_enabled": False,
-    "stt_provider": "disabled",
+    # Dictado gratuito por defecto ("browser": reconocimiento de voz del
+    # dispositivo). Con esto aparece el micrófono en la caja de mensaje.
+    "stt_enabled": True,
+    "stt_provider": "browser",
     "stt_model": "base",
     "stt_language": "",
     "search_provider": "searxng",
