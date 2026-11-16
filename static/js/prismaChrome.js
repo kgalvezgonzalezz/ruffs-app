@@ -2,8 +2,8 @@
 //
 // Builds the pieces of the Prisma design that plain CSS can't: the chat
 // header (title + "model · N messages · $cost" + context bar) and the
-// composer toolbar (attach / web / shell / document, model picker next to
-// the Agent/Chat switch; Nobody mode goes in the "more tools" menu). Everything is applied only while
+// composer toolbar (attach / web / shell, model picker next to the
+// Agent/Chat switch; Documents and Nobody mode stay in the "more tools" menu). Everything is applied only while
 // <html> has .skin-prisma and is undone when the user switches to Classic,
 // so the original layout stays exactly as it was.
 
@@ -14,7 +14,6 @@ const $ = (id) => document.getElementById(id);
 
 const ICONS = {
   clip: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11.5l-8.2 8.2a4.8 4.8 0 0 1-6.8-6.8l8.6-8.6a3.2 3.2 0 0 1 4.5 4.5l-8.4 8.4a1.6 1.6 0 0 1-2.3-2.3l7.6-7.6"/></svg>',
-  doc: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.5h7l4.5 4.5v12.5H7z"/><path d="M14 3.5V8h4.5"/></svg>',
   eyeoff: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l17 17M10.4 6.2A9 9 0 0 1 12 6c5.8 0 9 6 9 6a15.6 15.6 0 0 1-2.7 3.4M6.7 6.7C4.2 8.3 3 12 3 12s3.2 6 9 6a8.6 8.6 0 0 0 4.1-1"/></svg>',
   globe: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5a13 13 0 0 1 0 17 13 13 0 0 1 0-17z"/></svg>',
 };
@@ -189,24 +188,20 @@ function apply() {
   }
 
   // 2) Composer toolbar, in the order of the design:
-  //    [more] attach · web · shell · document  …  model · Agent/Chat · send
-  //    (Nobody mode: inside [more])
+  //    [more] attach · web · shell  …  model · Agent/Chat · send
+  //    Documents and Nobody mode stay inside [more]: on a phone every extra
+  //    icon in the toolbar crowded the model picker.
   const left = document.querySelector('.chat-input-left');
   const right = document.querySelector('.chat-input-right');
   const webBtn = $('web-toggle-btn');
-  const bashBtn = $('bash-toggle-btn');
   if (left) {
     const attach = _toolBtn('prisma-attach-btn', 'Attach files', ICONS.clip, () => {
       const b = $('overflow-attach-btn'); if (b) b.click(); else { const fi = $('file-input'); if (fi) fi.click(); }
     });
     _add(attach, left, webBtn || null);
 
-    const doc = _toolBtn('prisma-doc-btn', 'Documents', ICONS.doc, () => { const b = $('overflow-doc-btn'); if (b) b.click(); });
-    const after = bashBtn ? bashBtn.nextSibling : null;
-    _add(doc, left, after);
-
-    // Nobody mode lives inside the "more tools" menu (^) instead of the
-    // toolbar: on a phone the extra icon crowded the model picker.
+    // Nobody mode: an extra item of the "more tools" menu (^). Documents is
+    // already one of its own items.
     const menu = $('overflow-menu');
     const inc = document.createElement('button');
     inc.type = 'button';
@@ -225,10 +220,6 @@ function apply() {
 
     // Mirror on/off state of the proxied controls.
     const syncStates = () => {
-      const docSrc = $('overflow-doc-btn');
-      const docOn = !!(docSrc && (docSrc.classList.contains('active') || docSrc.getAttribute('aria-pressed') === 'true'));
-      doc.setAttribute('aria-pressed', docOn ? 'true' : 'false');
-      doc.classList.toggle('active', docOn);
       const chk = $('incognito-toggle');
       const incOn = !!(chk && chk.checked);
       inc.setAttribute('aria-pressed', incOn ? 'true' : 'false');
@@ -244,7 +235,6 @@ function apply() {
       document.dispatchEvent(new Event('overflow-state-change'));
     };
     syncStates();
-    _observe($('overflow-doc-btn'), { attributes: true, attributeFilter: ['class', 'aria-pressed'] }, syncStates);
     _observe($('incognito-btn'), { attributes: true, attributeFilter: ['class', 'style'] }, syncStates);
     _observe($('welcome-screen'), { attributes: true, attributeFilter: ['class'] }, syncStates);
   }
