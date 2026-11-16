@@ -73,6 +73,25 @@ Todas las versiones: [Releases](../../releases).
   **REA**, **Agent Desktop**, **HyperFrames** y más. En **Prompt → Persona**
   está **Computer Ruffs**, la persona preparada para Computer Use.
 
+## RUFFS para Android
+
+Usa tu RUFFS desde el teléfono con la app de Android: añade a la interfaz de
+RUFFS lo que el navegador del móvil no trae — micrófono y dictado, voz,
+notificaciones, compartir, descargas y tirar para recargar.
+
+<p align="center">
+  <a href="https://github.com/kgalvezgonzalezz/ruffs-android"><b>📱 Repositorio de RUFFS para Android</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/kgalvezgonzalezz/ruffs-android/releases/latest/download/RUFFS.apk"><b>⬇ Descargar RUFFS.apk</b></a>
+</p>
+
+- Necesita **Android 8 o superior** y tu propio RUFFS funcionando en un PC
+  (instalado con lo de arriba).
+- Para usarlo fuera de casa, instala [Tailscale](https://tailscale.com/download)
+  en el PC y en el teléfono; en la app escribes la IP de Tailscale de tu PC.
+- Las instrucciones completas (primer inicio, emparejamiento, permisos) están
+  en el [README de la app](https://github.com/kgalvezgonzalezz/ruffs-android#readme).
+
 ## Instalación manual desde el código
 
 ### Puesta en marcha (Windows)
