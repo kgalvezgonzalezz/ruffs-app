@@ -564,6 +564,13 @@ import * as Modals from './modalManager.js';
   }
 
   /** Show/hide the unified action button in the header based on current language */
+  // RUFFS: documento importado de Word (.docx) — su original se guarda en el
+  // servidor; la vista «word» lo muestra con su formato y «Export as Word»
+  // descarga el original con los cambios aplicados.
+  function _isDocxBackedDoc(content) {
+    return /<!--\s*docx_source\s+id="[0-9a-f]{32}"\s*-->/.test(content || '');
+  }
+
   function _isFormBackedDoc(content) {
     const c = content || '';
     return /<!--\s*pdf_form_source\s+upload_id="[^"]+"/.test(c)
@@ -918,6 +925,117 @@ import * as Modals from './modalManager.js';
   // Tracks which form-backed docs the user has toggled into PDF view
   // (per-doc, in-memory). Survives switches between docs in the same session.
   const _pdfViewState = new Map();
+  // RUFFS: vista «word» por documento (por defecto activa en documentos de Word).
+  const _wordViewState = new Map();
+  let _docxPreviewReady = null;
+
+  function _loadScriptOnce(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = () => reject(new Error('No se pudo cargar ' + src));
+      document.head.appendChild(s);
+    });
+  }
+
+  // docx-preview (visor de Word) publica su API en window.docx, el mismo nombre
+  // que usa la librería de exportación docx.js: se carga aislada y se guarda en
+  // window.ruffsDocxPreview, dejando window.docx como estaba.
+  function ensureDocxPreview() {
+    if (_docxPreviewReady) return _docxPreviewReady;
+    _docxPreviewReady = (async () => {
+      if (!window.JSZip) await _loadScriptOnce('/static/lib/jszip.min.js');
+      const prev = window.docx;
+      await _loadScriptOnce('/static/lib/docx-preview.min.js');
+      window.ruffsDocxPreview = window.docx;
+      if (prev) window.docx = prev; else { try { delete window.docx; } catch (_) { window.docx = undefined; } }
+    })();
+    _docxPreviewReady.catch(() => { _docxPreviewReady = null; });
+    return _docxPreviewReady;
+  }
+
+  // Guarda en el servidor exactamente lo que hay en el editor y espera a que
+  // termine (el autoguardado marca el cambio como guardado antes de que el PUT
+  // acabe, y el .docx se generaría con la versión anterior).
+  async function _flushDocxContent() {
+    const ta = document.getElementById('doc-editor-textarea');
+    const doc = docs.get(activeDocId);
+    if (!ta || !doc || !activeDocId || !_isDocxBackedDoc(ta.value)) return;
+    const r = await fetch(`${API_BASE}/api/document/${activeDocId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: ta.value }),
+      credentials: 'same-origin',
+    });
+    if (r.ok) doc.content = ta.value;
+  }
+
+  async function _renderWordPane() {
+    const pane = document.getElementById('doc-word-view');
+    const id = activeDocId;
+    if (!pane || !id) return;
+    pane.innerHTML = '<div style="color:#e5e7eb;text-align:center;padding:40px;font-size:13px;opacity:.85">Cargando el documento de Word…</div>';
+    try {
+      await _flushDocxContent();
+      await ensureDocxPreview();
+      const r = await fetch(`${API_BASE}/api/document/${id}/export-docx?inline=1`, { credentials: 'same-origin' });
+      if (!r.ok) throw new Error((await r.text()) || r.statusText);
+      const blob = await r.blob();
+      if (activeDocId !== id || pane.style.display === 'none') return;
+      pane.innerHTML = '';
+      const host = document.createElement('div');
+      host.className = 'doc-word-host';
+      pane.appendChild(host);
+      await window.ruffsDocxPreview.renderAsync(blob, host, null, {
+        className: 'docx', inWrapper: true, ignoreWidth: false, ignoreHeight: false,
+        breakPages: true, renderHeaders: true, renderFooters: true, renderFootnotes: true,
+        useBase64URL: true,
+      });
+    } catch (e) {
+      pane.innerHTML = '<div style="color:#fca5a5;padding:30px;text-align:center;font-size:13px">No se pudo mostrar el documento de Word: '
+        + (uiModule ? uiModule.esc(String(e.message || e)) : String(e)) + '</div>';
+    }
+  }
+
+  async function _setWordViewActive(active) {
+    const pane = document.getElementById('doc-word-view');
+    const wrap = document.getElementById('doc-editor-wrap');
+    if (!pane || !wrap) return;
+    _wordViewState.set(activeDocId, !!active);
+    if (active) {
+      wrap.style.display = 'none';
+      pane.style.display = '';
+      await _renderWordPane();
+    } else {
+      pane.style.display = 'none';
+      pane.innerHTML = '';
+      wrap.style.display = '';
+    }
+    const ls = document.getElementById('doc-language-select');
+    const want = active ? 'word' : 'markdown';
+    if (ls && ls.value !== want) {
+      ls.value = want;
+      ls.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+
+  // Al cambiar de documento: la vista Word se muestra en los de Word (salvo que
+  // el usuario haya elegido «markdown») y se oculta en el resto.
+  function _syncWordView(live) {
+    const pane = document.getElementById('doc-word-view');
+    if (!pane) return;
+    const isDocx = _isDocxBackedDoc(live);
+    const want = isDocx && _wordViewState.get(activeDocId) !== false;
+    if (want && pane.style.display === 'none') {
+      _setWordViewActive(true);
+    } else if (!want && pane.style.display !== 'none') {
+      pane.style.display = 'none';
+      pane.innerHTML = '';
+      const wrap = document.getElementById('doc-editor-wrap');
+      if (wrap && !_isFormBackedDoc(live)) wrap.style.display = '';
+    }
+  }
   const _pdfPaneFieldsByDoc = new Map(); // docId -> [{name, type, inputEl, ...}]
   const _pdfPaneAnnotationsByDoc = new Map(); // docId -> [{id, page, x, y, w, h, el, wrap}]
   const _pdfUndoStackByDoc = new Map(); // docId -> markdown snapshots
@@ -2039,6 +2157,7 @@ import * as Modals from './modalManager.js';
       || docs.get(activeDocId)?.content
       || '';
     const isForm = _isFormBackedDoc(live);
+    _syncWordView(live);
     // Footer main button: for a doc opened from an email attachment, morph the
     // Copy button into "Reply" (send the filled file back to the sender via the
     // signed-reply flow). Otherwise it's the normal Copy action. The click
@@ -3848,6 +3967,7 @@ import * as Modals from './modalManager.js';
           <option value="csv">csv</option>
           <option value="email">email</option>
           <option value="pdf">pdf</option>
+          <option value="word">word</option>
         </select>
         <!-- Close + Copy/Export moved to the bottom action footer (#doc-actions-footer)
              so regular docs match the email footer layout. -->
@@ -3960,6 +4080,7 @@ import * as Modals from './modalManager.js';
       <div id="doc-pdf-view" style="display:none;width:100%;flex:1;min-height:0;overflow:auto;background:#525659;padding:20px 0;position:relative;">
         <div id="doc-pdf-save-pill" style="display:none;position:absolute;top:8px;right:14px;padding:4px 10px;border-radius:12px;font-size:11px;z-index:5;pointer-events:none;background:transparent;color:transparent;"></div>
       </div>
+      <div id="doc-word-view" class="doc-word-view" style="display:none;width:100%;flex:1;min-height:0;overflow:auto;background:#525659;padding:20px 0;"></div>
       <!-- Action footer sits AFTER all the content/preview panes so it stays
            pinned to the bottom no matter which pane (editor / md-preview /
            csv / html / pdf) is the one growing to fill. -->
@@ -4229,6 +4350,7 @@ import * as Modals from './modalManager.js';
           row.type = 'button';
           row.className = 'doc-langpicker-item';
           row.dataset.value = opt.value;
+          if (opt.value === 'word') row.dataset.docxOnly = '1';
           row.setAttribute('role', 'option');
           const ic = opt.value
             ? langIcon(opt.value, 14, { style: 'opacity:0.85;' })
@@ -4264,6 +4386,13 @@ import * as Modals from './modalManager.js';
         // Highlight the current row in the open menu.
         menu.querySelectorAll('.doc-langpicker-item').forEach(r => {
           r.classList.toggle('is-selected', r.dataset.value === v);
+        });
+        // «word» solo tiene sentido en documentos importados de Word.
+        const _liveTxt = document.getElementById('doc-editor-textarea')?.value
+          || docs.get(activeDocId)?.content || '';
+        const _isDocx = _isDocxBackedDoc(_liveTxt);
+        menu.querySelectorAll('.doc-langpicker-item[data-docx-only]').forEach(r => {
+          r.style.display = _isDocx ? '' : 'none';
         });
       };
 
@@ -4330,6 +4459,15 @@ import * as Modals from './modalManager.js';
         || docs.get(activeDocId)?.content || '';
       if (_isFormBackedDoc(live) && (val === 'pdf' || val === 'markdown')) {
         _setPdfViewActive(val === 'pdf');
+        return;
+      }
+      if (_isDocxBackedDoc(live) && (val === 'word' || val === 'markdown')) {
+        _setWordViewActive(val === 'word');
+        return;
+      }
+      if (val === 'word') {   // no es un documento de Word: no hay nada que mostrar
+        const ls2 = document.getElementById('doc-language-select');
+        if (ls2) { ls2.value = 'markdown'; ls2.dispatchEvent(new Event('change', { bubbles: true })); }
         return;
       }
       // Mark user explicitly chose a language — stop auto-detection
@@ -8267,6 +8405,7 @@ function exportDocument() {
       const baseTitle = dotIdx > 0 ? name.slice(0, dotIdx) : name;
       const isSpreadsheet = ['.xlsx','.xls','.ods'].includes(ext);
       const isPdf = ext === '.pdf';
+      const isDocx = ext === '.docx';
       // Spreadsheets need the library's per-sheet split — defer to it.
       if (isSpreadsheet) {
         openLibrary();
@@ -8275,7 +8414,20 @@ function exportDocument() {
       }
       try {
         let docId = null;
-        if (isPdf) {
+        if (isDocx) {
+          const fd = new FormData();
+          fd.append('file', file);
+          const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
+          if (sid) fd.append('session_id', sid);
+          const r = await fetch(`${API_BASE}/api/documents/import-docx`, { method: 'POST', body: fd, credentials: 'same-origin' });
+          if (!r.ok) {
+            let msg = 'No se pudo importar el .docx';
+            try { msg = (await r.json()).detail || msg; } catch (_) {}
+            throw new Error(msg);
+          }
+          const j = await r.json();
+          docId = j.doc_id || j.id;
+        } else if (isPdf) {
           const fd = new FormData();
           fd.append('file', file);
           const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
@@ -8480,6 +8632,22 @@ function exportDocument() {
     if (!activeDocId) return;
     const textarea = document.getElementById('doc-editor-textarea');
     if (!textarea) return;
+    if (_isDocxBackedDoc(textarea.value)) {
+      // Documento importado de Word: el servidor aplica los cambios sobre el
+      // .docx original (estilos, imágenes, tablas, encabezados intactos).
+      try {
+        await _flushDocxContent();
+        const r = await fetch(`${API_BASE}/api/document/${activeDocId}/export-docx`, { credentials: 'same-origin' });
+        if (!r.ok) throw new Error((await r.text()) || r.statusText);
+        const blob = await r.blob();
+        _downloadBlob(blob, _getExportBaseName() + '.docx');
+        const warn = r.headers.get('X-RUFFS-Warnings');
+        if (uiModule) uiModule.showToast(warn ? decodeURIComponent(warn) : 'Descargado en Word (.docx) con su formato');
+      } catch (e) {
+        if (uiModule) uiModule.showError('No se pudo descargar el .docx: ' + (e.message || e));
+      }
+      return;
+    }
     try {
       await ensureDocx();
     } catch (e) {

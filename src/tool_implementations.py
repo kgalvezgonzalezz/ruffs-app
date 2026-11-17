@@ -1463,6 +1463,84 @@ async def do_manage_tokens(content: str, owner: Optional[str] = None) -> Dict:
 # Document management tool (delete, list, organize)
 # ---------------------------------------------------------------------------
 
+_TEXT_IMPORT_EXTS = {
+    ".md": "markdown", ".markdown": "markdown", ".txt": "", ".log": "", ".csv": "csv", ".json": "json",
+    ".yaml": "yaml", ".yml": "yaml", ".html": "html", ".htm": "html", ".xml": "xml", ".py": "python",
+    ".js": "javascript", ".ts": "typescript", ".css": "css", ".sql": "sql", ".sh": "bash", ".ps1": "powershell",
+    ".ini": "ini", ".toml": "toml", ".java": "java", ".c": "c", ".cpp": "cpp", ".cs": "csharp", ".go": "go",
+    ".rs": "rust",
+}
+
+
+async def _import_file_to_editor(args: Dict, owner: Optional[str]) -> Dict:
+    """RUFFS: importa un archivo del equipo al editor de documentos y lo abre.
+
+    .docx → documento de Word (vista Word con su formato y descarga en Word que
+    lo conserva); texto/código/markdown → documento con su contenido."""
+    import asyncio
+    import os
+    from src.tool_execution import _resolve_tool_path
+
+    raw = (args.get("path") or args.get("file") or args.get("file_path") or "").strip().strip('"')
+    if not raw:
+        return {"error": "path is required (the file to open in the editor)", "exit_code": 1}
+    try:
+        path = _resolve_tool_path(raw)
+    except ValueError as e:
+        return {"error": f"import: {e}", "exit_code": 1}
+    if not os.path.isfile(path):
+        return {"error": f"import: no existe el archivo {raw!r}", "exit_code": 1}
+    name = os.path.basename(path)
+    title = (args.get("title") or os.path.splitext(name)[0] or "Documento").strip()
+    ext = os.path.splitext(name)[1].lower()
+    if ext == ".docx":
+        from src import docx_doc
+        with open(path, "rb") as f:
+            data = f.read()
+        try:
+            doc_id = await asyncio.to_thread(docx_doc.create_document, data, title, owner, None)
+        except Exception as e:  # noqa: BLE001
+            return {"error": f"No se pudo importar el .docx: {e}", "exit_code": 1}
+        language = "markdown"
+        from core.database import SessionLocal, Document
+        db = SessionLocal()
+        try:
+            content = db.query(Document).filter(Document.id == doc_id).first().current_content
+        finally:
+            db.close()
+        kind = "documento de Word"
+    elif ext in _TEXT_IMPORT_EXTS:
+        if os.path.getsize(path) > 5 * 1024 * 1024:
+            return {"error": "import: el archivo de texto supera 5 MB", "exit_code": 1}
+        with open(path, encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        language = _TEXT_IMPORT_EXTS[ext] or None
+        import uuid as _uuid
+        from core.database import SessionLocal, Document, DocumentVersion
+        db = SessionLocal()
+        try:
+            doc_id = str(_uuid.uuid4())
+            db.add(Document(id=doc_id, title=title, language=language, current_content=content,
+                            version_count=1, is_active=True, owner=owner))
+            db.add(DocumentVersion(id=str(_uuid.uuid4()), document_id=doc_id, version_number=1,
+                                   content=content, summary=f"Importado de {name}", source="upload"))
+            db.commit()
+        finally:
+            db.close()
+        kind = "archivo"
+    else:
+        return {"error": (f"import: los archivos {ext or 'sin extensión'} no se abren desde aquí. "
+                          "Para PDF u hojas de cálculo pide al usuario que use «Import from device» "
+                          "en el editor de documentos."), "exit_code": 1}
+    return {
+        "response": (f"Abrí «{title}» ({kind}) en el editor de documentos: [{title}](#document-{doc_id}). "
+                     + ("Puede verlo con su formato en la vista «word» y descargarlo en Word desde Exportar."
+                        if ext == ".docx" else "")),
+        "doc_id": doc_id, "title": title, "language": language or "", "content": content,
+        "version": 1, "open_in_editor": True, "exit_code": 0,
+    }
+
+
 async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict:
     """Manage documents: list, read/view/open, delete, tidy.
 
@@ -1494,6 +1572,10 @@ async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict
         if diff < 86400: return f'{int(diff / 3600)}h ago'
         if diff < 86400 * 7: return f'{int(diff / 86400)}d ago'
         return ts.strftime('%Y-%m-%d')
+
+    if action in ("import", "import_file", "open_file", "open_path"):
+        db.close()
+        return await _import_file_to_editor(args, owner)
 
     try:
         if action == "list":

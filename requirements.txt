@@ -11,6 +11,8 @@ pydantic>=2.0
 pydantic-settings>=2.0
 SQLAlchemy
 pypdf
+# RUFFS: abrir, editar y descargar documentos de Word (.docx) con su formato (MIT)
+python-docx>=1.1
 beautifulsoup4
 charset-normalizer
 numpy

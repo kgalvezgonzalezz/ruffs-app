@@ -245,6 +245,87 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         finally:
             db.close()
 
+    # ---- POST /api/documents/import-docx ----  (RUFFS: documentos de Word)
+    @router.post("/api/documents/import-docx")
+    async def import_docx(
+        request: Request,
+        file: UploadFile = File(...),
+        session_id: Optional[str] = Form(None),
+    ) -> Dict[str, Any]:
+        """Importa un .docx: guarda el original (para verlo con su formato y
+        descargarlo igual) y crea el documento editable en el editor."""
+        import asyncio
+        import os
+        from src.auth_helpers import require_privilege
+        from src import docx_doc
+
+        user = require_privilege(request, "can_use_documents")
+        if session_id:
+            db = SessionLocal()
+            try:
+                sess = db.query(DbSession).filter(DbSession.id == session_id).first()
+                if not sess:
+                    raise HTTPException(404, "Session not found")
+                if user and sess.owner and sess.owner != user:
+                    raise HTTPException(403, "Cannot import into another user's session")
+            finally:
+                db.close()
+        data = await file.read()
+        title = os.path.splitext(os.path.basename(file.filename or "Documento"))[0] or "Documento"
+        try:
+            doc_id = await asyncio.to_thread(docx_doc.create_document, data, title, user, session_id)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"DOCX import failed: {e}")
+            raise HTTPException(400, f"No se pudo leer el .docx: {e}")
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            return _doc_to_dict(doc)
+        finally:
+            db.close()
+
+    # ---- GET /api/document/{doc_id}/export-docx ----  (RUFFS)
+    @router.get("/api/document/{doc_id}/export-docx")
+    async def export_docx(doc_id: str, request: Request, inline: bool = False):
+        """El .docx del documento: el original si no se tocó, o el original con
+        los cambios del editor aplicados (conserva estilos, imágenes, tablas,
+        encabezados y márgenes)."""
+        import asyncio
+        import urllib.parse
+        from fastapi.responses import Response
+        from src import docx_doc
+
+        user = get_current_user(request)
+        db = SessionLocal()
+        try:
+            doc = db.query(Document).filter(Document.id == doc_id).first()
+            if not doc:
+                raise HTTPException(404, "Document not found")
+            _verify_doc_owner(db, doc, user)
+            content = doc.current_content or ""
+            title = doc.title or "Documento"
+        finally:
+            db.close()
+        source = docx_doc.source_path(docx_doc.find_source_id(content) or "")
+        if not source:
+            raise HTTPException(400, "Este documento no viene de un archivo Word (.docx)")
+        try:
+            data, warnings = await asyncio.to_thread(docx_doc.export_bytes, source, content)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"DOCX export failed for {doc_id}: {e}")
+            raise HTTPException(500, f"No se pudo generar el .docx: {e}")
+        fname = urllib.parse.quote(f"{title}.docx")
+        headers = {
+            "Content-Disposition": f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{fname}",
+            "Cache-Control": "no-store",
+        }
+        if warnings:
+            headers["X-RUFFS-Warnings"] = urllib.parse.quote(" ".join(warnings))
+        return Response(content=data, headers=headers,
+                        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
     # ---- GET /api/documents/library ----
     @router.get("/api/documents/library")
     async def documents_library(
