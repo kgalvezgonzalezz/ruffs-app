@@ -25,9 +25,10 @@ def default_port() -> int:
     """Best guess at the port the server is reachable on. Callers that know the
     real request port should pass it explicitly."""
     try:
-        return int(os.environ.get("APP_PORT", "7000"))
-    except ValueError:
-        return 7000
+        from core.constants import server_port
+        return server_port()
+    except Exception:  # noqa: BLE001
+        return 7100
 
 
 _TAILSCALE_NET = ipaddress.ip_network("100.64.0.0/10")

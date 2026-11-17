@@ -231,8 +231,8 @@ def main():
     # this, so suppress the manual hint there to avoid a contradictory URL.
     if not os.getenv("ODYSSEUS_SKIP_RUN_HINT"):
         print(f"\nStart the server with:")
-        print(f"  python -m uvicorn app:app --host 0.0.0.0 --port 7000")
-        print(f"\nThen open http://localhost:7000")
+        print(f"  python -m uvicorn app:app --host 0.0.0.0 --port 7100")
+        print(f"\nThen open http://localhost:7100")
 
     # Cleaned, action-focused final instruction strings
     if admin_status == "created":

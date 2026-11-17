@@ -2551,7 +2551,11 @@ async def do_manage_calendar(content: str, owner: Optional[str] = None) -> Dict:
 # Cookbook routes loopback. The agent's tool calls run in-process but
 # need to reach admin-gated cookbook routes; we ride the per-process
 # internal token so require_admin lets us through. See core/middleware.py.
-_COOKBOOK_BASE = "http://localhost:7000"
+# RUFFS: el puerto REAL de este servidor (antes fijo en 7000, de Odysseus, y
+# todo el loopback fallaba con «All connection attempts failed»).
+from core.constants import loopback_base as _loopback_base
+_LOOPBACK_BASE = _loopback_base()
+_COOKBOOK_BASE = _LOOPBACK_BASE
 
 
 def _internal_headers(owner: Optional[str] = None) -> Dict[str, str]:
@@ -3772,7 +3776,7 @@ async def do_edit_image(content: str, owner: Optional[str] = None) -> Dict:
         payload["scale"] = args["scale"]
     try:
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(f"http://localhost:7000/api/gallery/{action}", json=payload)
+            resp = await client.post(f"{_LOOPBACK_BASE}/api/gallery/{action}", json=payload)
             data = resp.json()
         if data.get("success") or data.get("id"):
             return {"output": f"Image edited ({action}). New image ID: {data.get('id', '?')}", "exit_code": 0}
@@ -3948,7 +3952,7 @@ async def do_resolve_contact(content: str, owner: Optional[str] = None) -> Dict:
     async with httpx.AsyncClient(timeout=30) as client:
         # 2. Email history (sent/received)
         try:
-            resp = await client.get("http://localhost:7000/api/email/resolve-contact", params={"name": name})
+            resp = await client.get(f"{_LOOPBACK_BASE}/api/email/resolve-contact", params={"name": name})
             if resp.status_code == 200:
                 for c in (resp.json().get("contacts") or []):
                     email = (c.get("email") or "").strip().lower()

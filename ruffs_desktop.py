@@ -137,6 +137,8 @@ def main() -> int:
     if HERE not in sys.path:
         sys.path.insert(0, HERE)
 
+    # Puerto real para las llamadas internas de las herramientas (core.constants).
+    os.environ["RUFFS_SERVER_PORT"] = str(args.port)
     view_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
     url = f"http://{view_host}:{args.port}"
 

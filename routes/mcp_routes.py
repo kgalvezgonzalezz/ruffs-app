@@ -461,7 +461,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
 
             # For Desktop App creds, redirect to localhost — the user will
             # paste the resulting URL back if they're on a different device.
-            redirect_uri = "http://localhost:7000/api/mcp/oauth/callback"
+            from core.constants import server_port
+            redirect_uri = f"http://localhost:{server_port()}/api/mcp/oauth/callback"
 
             params = {
                 "client_id": client_id,
@@ -531,7 +532,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
             client_id = keys["client_id"]
             client_secret = keys["client_secret"]
 
-            redirect_uri = "http://localhost:7000/api/mcp/oauth/callback"
+            from core.constants import server_port
+            redirect_uri = f"http://localhost:{server_port()}/api/mcp/oauth/callback"
 
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
@@ -605,6 +607,8 @@ def _oauth_authorize_page(auth_url: str, server_id: str, host: str) -> str:
     auth_url = html.escape(auth_url, quote=True)
     server_id = html.escape(server_id, quote=True)
     host = html.escape(host, quote=True)
+    from core.constants import server_port
+    port = server_port()
     return f"""<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8"><title>Authorize — RUFFS</title>
@@ -649,7 +653,7 @@ def _oauth_authorize_page(auth_url: str, server_id: str, host: str) -> str:
   <div class="divider"></div>
   <form method="POST" action="http://{host}/api/mcp/oauth/exchange/{server_id}">
     <p>Paste the URL from your browser after signing in:</p>
-    <input type="text" name="callback_url" placeholder="http://localhost:7000/api/mcp/oauth/callback?code=..." required>
+    <input type="text" name="callback_url" placeholder="http://localhost:{port}/api/mcp/oauth/callback?code=..." required>
     <br><button type="submit">Connect</button>
   </form>
 </div></body></html>"""
