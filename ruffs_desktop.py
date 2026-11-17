@@ -202,11 +202,23 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
 
-    print("[RUFFS] Deteniendo el servidor…", flush=True)
+    # Apagado. Cerrar los MCP y el servidor tarda unos segundos; si mientras
+    # tanto se pulsa Ctrl+C otra vez, se fuerza la salida sin volcar una traza.
+    print("[RUFFS] Apagando RUFFS… (Ctrl+C otra vez para forzarlo)", flush=True)
     server.should_exit = True
-    t.join(timeout=15)
+    close_window()
+    try:
+        t.join(timeout=15)
+    except KeyboardInterrupt:
+        server.force_exit = True
+        print("[RUFFS] Apagado forzado.", flush=True)
+        os._exit(0)
+    print("[RUFFS] RUFFS apagado.", flush=True)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:  # Ctrl+C en cualquier otro momento: salir sin traza
+        os._exit(0)
