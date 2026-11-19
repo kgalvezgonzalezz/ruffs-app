@@ -124,12 +124,12 @@ def push_event(calendars, local_cal_id: str, ev: dict, *, delete: bool = False) 
 def _discover_calendars(client):
     """Discover the principal's calendars, falling back to the URL itself —
     same strategy as the pull path."""
-    from caldav.lib.error import AuthorizationError, NotFoundError
+    from caldav.lib.error import AuthorizationError
     try:
         return client.principal().calendars()
-    except (AuthorizationError, NotFoundError):
+    except AuthorizationError:
         raise
-    except Exception:
+    except Exception:  # RUFFS: un 404 (URL directa a un calendario) usa la URL
         try:
             return [client.calendar(url=str(client.url))]
         except Exception:
@@ -145,6 +145,22 @@ def _writeback_blocking(local_cal_id, ev, delete, url, username, password) -> di
     return push_event(calendars, local_cal_id, ev, delete=delete)
 
 
+def _writeback_google_blocking(owner, local_cal_id, ev, delete):
+    """Push a Google Calendar; None si ese calendario no es de Google."""
+    from src import google_oauth
+    try:
+        _client, cals = google_oauth.caldav_calendars(owner)
+    except google_oauth.GoogleAuthError as e:
+        return {"ok": False, "error": f"Google: {e}"}
+    remote = [c for c, _info in cals]
+    if find_remote_calendar(remote, local_cal_id) is None:
+        return None
+    info = next((i for c, i in cals if _stable_cal_id(str(c.url)) == local_cal_id), {})
+    if not info.get("writable", True):
+        return {"ok": False, "error": "Ese calendario de Google es de solo lectura"}
+    return push_event(remote, local_cal_id, ev, delete=delete)
+
+
 async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
                           ev: dict, *, delete: bool = False) -> dict:
     """Best-effort push of a local change to the remote CalDAV server.
@@ -158,7 +174,17 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
     try:
         from routes.prefs_routes import _load_for_user
         from src.secret_storage import decrypt
-        cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}
+        prefs = _load_for_user(owner) or {}
+        # RUFFS: calendarios de Google (Conectar con Google) — mismo push,
+        # con los calendarios construidos desde el token OAuth.
+        from src.caldav_sync import google_enabled
+        if google_enabled(prefs):
+            result = await asyncio.to_thread(_writeback_google_blocking, owner, calendar_id, ev, delete)
+            if result is not None:
+                if not result.get("ok"):
+                    logger.warning("Google Calendar write-back did not apply: %s", result.get("error") or result)
+                return result
+        cfg = prefs.get("caldav", {}) or {}
         url = (cfg.get("url") or "").strip()
         user = (cfg.get("username") or "").strip()
         # Stored encrypted by routes/calendar_routes; decrypt before use so

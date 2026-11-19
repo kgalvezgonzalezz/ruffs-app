@@ -59,7 +59,7 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
     if security == "ssl":
         with smtplib.SMTP_SSL(host, port, timeout=timeout) as smtp:
             if user and password:
-                smtp.login(user, password)
+                _smtp_login(smtp, host, user, password, cfg.get("owner"))
             smtp.sendmail(from_addr, recipients, message)
         return
 
@@ -67,8 +67,28 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
         if security == "starttls":
             smtp.starttls()
         if user and password:
-            smtp.login(user, password)
+            _smtp_login(smtp, host, user, password, cfg.get("owner"))
         smtp.sendmail(from_addr, recipients, message)
+
+
+# RUFFS: inicio de sesión común para IMAP/SMTP. Las cuentas conectadas con
+# «Conectar con Google» guardan un marcador en lugar de contraseña y entran
+# con OAuth (XOAUTH2); las contraseñas de aplicación de Gmail se aceptan
+# aunque se peguen con espacios.
+def _smtp_login(smtp, host: str, user: str, password: str, owner=None) -> None:
+    from src import google_oauth
+    if password == google_oauth.GOOGLE_MARKER:
+        google_oauth.smtp_login(smtp, user, owner)
+    else:
+        smtp.login(user, google_oauth.normalize_password(host, password))
+
+
+def _imap_login(conn, host: str, user: str, password: str, owner=None) -> None:
+    from src import google_oauth
+    if password == google_oauth.GOOGLE_MARKER:
+        google_oauth.imap_login(conn, user, owner)
+    else:
+        conn.login(user, google_oauth.normalize_password(host, password))
 
 
 def _strip_think(text: str) -> str:
@@ -566,6 +586,7 @@ def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:
                 cfg = {
                     "account_id": row.id,
                     "account_name": row.name,
+                    "owner": row.owner or "",
                     "smtp_host": row.smtp_host or "",
                     "smtp_port": int(row.smtp_port or 465),
                     "smtp_security": _smtp_security_mode({"smtp_security": getattr(row, "smtp_security", ""), "smtp_port": row.smtp_port}),
@@ -706,7 +727,7 @@ def _imap_connect(account_id: str | None = None, owner: str = ""):
         starttls=bool(cfg.get("imap_starttls")),
         timeout=_IMAP_TIMEOUT_SECONDS,
     )
-    conn.login(cfg["imap_user"], cfg["imap_password"])
+    _imap_login(conn, cfg["imap_host"], cfg["imap_user"], cfg["imap_password"], cfg.get("owner"))
     return conn
 
 

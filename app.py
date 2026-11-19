@@ -159,6 +159,8 @@ if LOCALHOST_BYPASS:
 
 if AUTH_ENABLED:
     AUTH_EXEMPT_EXACT = {
+        # RUFFS: vuelta de Google (OAuth); el «state» de un solo uso identifica al usuario
+        "/api/google/oauth/callback",
         "/api/auth/setup",
         "/api/auth/signup",
         "/api/auth/login",
@@ -1111,6 +1113,10 @@ from routes.calendar_routes import setup_calendar_routes
 calendar_router = setup_calendar_routes()
 app.include_router(calendar_router)
 
+# RUFFS: Conectar con Google (Gmail + Google Calendar con OAuth)
+from routes.google_routes import setup_google_routes
+app.include_router(setup_google_routes())
+
 # Shell (user-facing command execution)
 from routes.shell_routes import setup_shell_routes
 app.include_router(setup_shell_routes())
@@ -1580,6 +1586,10 @@ async def _startup_event():
                 await asyncio.sleep(3600)
 
     _startup_tasks.append(asyncio.create_task(_null_owner_sweep_loop()))
+
+    # RUFFS: sincronización periódica de calendarios (CalDAV y Google)
+    from src.caldav_sync import caldav_background_loop
+    _startup_tasks.append(asyncio.create_task(caldav_background_loop()))
 
     # Nightly skill audit — at ~02:00 local, test + judge a batch of the
     # least-recently-checked skills, auto-fixing/escalating weak ones (never

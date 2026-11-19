@@ -2520,6 +2520,33 @@ body.bg-pattern-sparkles {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
+    /* RUFFS: botón del micrófono (separado del de enviar/detener) */
+    .chat-mic-btn {
+      background: color-mix(in srgb, var(--fg) 6%, transparent);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-width: 32px;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.2s, border-color 0.2s, color 0.2s;
+    }
+    .chat-mic-btn:hover {
+      background: color-mix(in srgb, var(--send-btn-bg, var(--red)) 25%, transparent);
+      border-color: var(--fg);
+    }
+    .chat-mic-btn.recording {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+      animation: pulse-recording 1.5s infinite;
+    }
     /* Mode toggle — Agent / Chat */
     .mode-toggle {
       display: flex;

@@ -3539,8 +3539,9 @@ function startOdysseusApp() {
 
   chatForm.onsubmit = handleSubmit;
 
-  // ── Dual-purpose send/mic button ──
+  // ── Botón principal (nuevo chat / enviar / detener) + micrófono aparte ──
   const sendBtn = document.querySelector('.send-btn');
+  const micBtn = document.getElementById('chat-mic-btn');
   const messageInput = el('message');
   const modelPickerWrap = document.getElementById('model-picker-wrap');
 
@@ -3560,22 +3561,29 @@ function startOdysseusApp() {
     return fileHandlerModule.getPendingCount && fileHandlerModule.getPendingCount() > 0;
   }
 
+  // RUFFS: el micrófono tiene su propio botón (visible si el dictado está
+  // activado); pulsarlo graba y volver a pulsarlo termina el dictado.
+  function _syncMicBtn() {
+    if (!micBtn) return;
+    const recording = voiceRecorderModule.getIsRecording();
+    micBtn.style.display = (_isSttEnabled() || recording) ? '' : 'none';
+    micBtn.classList.toggle('recording', recording);
+    micBtn.setAttribute('aria-pressed', recording ? 'true' : 'false');
+    micBtn.title = recording ? 'Terminar dictado' : 'Dictar por voz';
+    micBtn.setAttribute('aria-label', micBtn.title);
+    micBtn.innerHTML = recording ? _stopIcon : _micIcon;
+  }
+
   function _updateSendBtnIcon() {
+    _syncMicBtn();
     if (!sendBtn) return;
-    // Don't override if streaming (stop button) or recording
-    if (sendBtn.dataset.mode === 'streaming' || sendBtn.dataset.mode === 'recording') return;
+    // Don't override while streaming (stop button)
+    if (sendBtn.dataset.mode === 'streaming') return;
     const prevMode = sendBtn.dataset.mode || '';
     const hasText = messageInput && messageInput.value.trim().length > 0;
     const hasFiles = _hasAttachments();
     let newMode;
-    if (!hasText && !hasFiles && _isSttEnabled()) {
-      clearTimeout(sendBtn._collapseTimer);
-      sendBtn.innerHTML = _micIcon;
-      sendBtn.title = 'Record voice';
-      newMode = 'mic';
-      sendBtn.classList.add('mic-mode');
-      sendBtn.classList.remove('newchat-mode', 'newchat-expanded');
-    } else if (!hasText && !hasFiles && !_isSttEnabled()) {
+    if (!hasText && !hasFiles) {
       clearTimeout(sendBtn._collapseTimer);
       // Group chat: always show send button, never newchat mode
       if (groupModule && groupModule.isActive()) {
@@ -3650,9 +3658,10 @@ function startOdysseusApp() {
     sendBtn.addEventListener('click', (e) => {
       e.preventDefault();
 
-      // If recording, stop recording
-      if (sendBtn.dataset.mode === 'recording' || voiceRecorderModule.getIsRecording()) {
-        voiceRecorderModule.stopRecording();
+      // Agente/modelo trabajando: este botón es «detener», siempre (aunque el
+      // cuadro de texto esté vacío). handleSubmit detiene el proceso en curso.
+      if (sendBtn.dataset.mode === 'streaming') {
+        handleSubmit(e);
         return;
       }
 
@@ -3676,22 +3685,31 @@ function startOdysseusApp() {
         return;
       }
 
-      // If input is empty and STT is enabled, start recording
-      if (!hasText && !hasFiles && _isSttEnabled()) {
-        sendBtn.innerHTML = _stopIcon;
-        sendBtn.title = 'Stop recording';
-        sendBtn.dataset.mode = 'recording';
-        sendBtn.classList.add('recording');
-        voiceRecorderModule.startRecording(
-          (audioFile) => fileHandlerModule.addFiles([audioFile]),
-          uiModule.showToast,
-          uiModule.showError
-        );
-        return;
-      }
+      // Si estaba dictando, termina el dictado antes de enviar.
+      if (voiceRecorderModule.getIsRecording()) voiceRecorderModule.stopRecording();
 
       // Otherwise, send message
       handleSubmit(e);
+    });
+  }
+
+  if (micBtn) {
+    micBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (voiceRecorderModule.getIsRecording()) {
+        voiceRecorderModule.stopRecording();
+        _syncMicBtn();
+        return;
+      }
+      voiceRecorderModule.startRecording(
+        (audioFile) => fileHandlerModule.addFiles([audioFile]),
+        uiModule.showToast,
+        uiModule.showError
+      );
+      micBtn.classList.add('recording');
+      micBtn.innerHTML = _stopIcon;
+      micBtn.title = 'Terminar dictado';
+      micBtn.setAttribute('aria-pressed', 'true');
     });
   }
 

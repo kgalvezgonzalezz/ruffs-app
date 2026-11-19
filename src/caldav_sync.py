@@ -130,8 +130,7 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
     # Lazy imports so a missing `caldav` dep doesn't break app startup —
     # the integrations form still works, sync just no-ops with an error.
     import caldav
-    from caldav.lib.error import AuthorizationError, NotFoundError
-    from core.database import CalendarCal, CalendarEvent, SessionLocal
+    from caldav.lib.error import AuthorizationError
 
     result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
 
@@ -140,12 +139,15 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
     # Discovery: try principal → calendars first; if the server doesn't
     # support discovery (or the URL points directly at a calendar), fall
     # back to treating the URL as a single calendar.
+    # RUFFS: un 404 en el descubrimiento (URL que apunta directo a un
+    # calendario) ya no aborta: se prueba la URL como calendario. Solo un
+    # error de autenticación corta aquí, con un mensaje claro.
     calendars = []
     try:
         principal = client.principal()
         calendars = principal.calendars()
-    except (AuthorizationError, NotFoundError) as e:
-        result["errors"].append(f"Discovery failed: {e}")
+    except AuthorizationError as e:
+        result["errors"].append(f"Usuario o contraseña rechazados por el servidor CalDAV ({e})")
         return result
     except Exception as e:
         logger.info(f"CalDAV principal discovery failed, trying URL as calendar: {e}")
@@ -162,16 +164,43 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
             result["errors"].append(f"No calendars and URL fallback failed: {e}")
             return result
 
+    _pull_into_db(owner, [(c, None) for c in calendars], result)
+    return result
+
+
+def _sync_google_blocking(owner: str) -> dict:
+    """RUFFS: Google Calendar con «Conectar con Google» (OAuth + CalDAV)."""
+    from src import google_oauth
+    result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+    try:
+        _client, cals = google_oauth.caldav_calendars(owner)
+    except google_oauth.GoogleAuthError as e:
+        result["errors"].append(f"Google: {e}")
+        return result
+    _pull_into_db(owner, cals, result, label="Google")
+    if any("403" in e for e in result["errors"]):
+        result["errors"].append("Google: activa «CalDAV API» en tu proyecto de Google Cloud "
+                                "(https://console.cloud.google.com/apis/library/caldav.googleapis.com)")
+    return result
+
+
+def _pull_into_db(owner: str, calendars, result: dict, label: str = "CalDAV") -> None:
+    """Trae los eventos de cada calendario remoto a la base local.
+
+    ``calendars``: lista de (calendario caldav, info|None); info puede traer
+    ``name`` y ``color`` (Google) para el calendario local."""
+    from core.database import CalendarCal, CalendarEvent, SessionLocal
+
     start = datetime.utcnow() - timedelta(days=_LOOKBACK_DAYS)
     end = datetime.utcnow() + timedelta(days=_LOOKAHEAD_DAYS)
 
     db = SessionLocal()
     try:
-        for remote_cal in calendars:
+        for remote_cal, info in calendars:
             try:
                 remote_url = str(remote_cal.url)
                 cal_id = _stable_cal_id(remote_url)
-                display_name = (remote_cal.name or "").strip() or "CalDAV"
+                display_name = ((info or {}).get("name") or remote_cal.name or "").strip() or label
 
                 local_cal = db.query(CalendarCal).filter(
                     CalendarCal.id == cal_id,
@@ -182,7 +211,7 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
                         id=cal_id,
                         owner=owner,
                         name=display_name,
-                        color="#5b8abf",
+                        color=(info or {}).get("color") or "#5b8abf",
                         source="caldav",
                     )
                     db.add(local_cal)
@@ -303,16 +332,27 @@ def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
     finally:
         db.close()
 
-    return result
+
+def google_enabled(prefs: dict) -> bool:
+    return bool(((prefs or {}).get("google_calendar") or {}).get("enabled"))
+
+
+def _merge(a: dict, b: dict) -> dict:
+    return {k: (a.get(k, 0) + b.get(k, 0)) if k != "errors" else a.get("errors", []) + b.get("errors", [])
+            for k in ("calendars", "events", "deleted", "errors")}
 
 
 async def sync_caldav(owner: str) -> dict:
     """Pull CalDAV state into local DB for `owner`. Returns counts +
     errors. Loads credentials from the user's prefs; no-ops with a
-    clear error if CalDAV isn't configured."""
+    clear error if CalDAV isn't configured.
+
+    RUFFS: también trae Google Calendar si está conectado con Google
+    (independiente de un CalDAV propio: pueden convivir)."""
     from routes.prefs_routes import _load_for_user
 
-    cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}
+    prefs = _load_for_user(owner) or {}
+    cfg = prefs.get("caldav", {}) or {}
     url = (cfg.get("url") or "").strip()
     user = (cfg.get("username") or "").strip()
     pw = cfg.get("password") or ""
@@ -321,16 +361,50 @@ async def sync_caldav(owner: str) -> dict:
         pw = decrypt(pw)
     except Exception:
         pass
-    if not (url and user and pw):
+    result = {"calendars": 0, "events": 0, "deleted": 0, "errors": []}
+    has_caldav = bool(url and user and pw)
+    has_google = google_enabled(prefs)
+    if not (has_caldav or has_google):
         return {
             "calendars": 0, "events": 0, "deleted": 0,
             "errors": ["CalDAV is not configured"],
         }
-    try:
-        url = validate_caldav_url(url)
-        return await asyncio.to_thread(_sync_blocking, owner, url, user, pw)
-    except ValueError as e:
-        return {"calendars": 0, "events": 0, "deleted": 0, "errors": [str(e)]}
-    except Exception as e:
-        logger.exception("CalDAV sync raised")
-        return {"calendars": 0, "events": 0, "deleted": 0, "errors": [str(e)[:200]]}
+    if has_caldav:
+        try:
+            url = validate_caldav_url(url)
+            result = _merge(result, await asyncio.to_thread(_sync_blocking, owner, url, user, pw))
+        except ValueError as e:
+            result["errors"].append(str(e))
+        except Exception as e:
+            logger.exception("CalDAV sync raised")
+            result["errors"].append(str(e)[:200])
+    if has_google:
+        try:
+            result = _merge(result, await asyncio.to_thread(_sync_google_blocking, owner))
+        except Exception as e:
+            logger.exception("Google Calendar sync raised")
+            result["errors"].append(f"Google: {str(e)[:200]}")
+    return result
+
+
+_SYNC_INTERVAL_SECONDS = 10 * 60
+
+
+async def caldav_background_loop() -> None:
+    """RUFFS: sincroniza cada 10 minutos los calendarios de todos los usuarios
+    con CalDAV o Google conectado (antes solo se traían al abrir el
+    calendario, así que lo creado en el móvil no aparecía hasta entonces)."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            from routes.prefs_routes import _load
+            users = (_load() or {}).get("_users") or {}
+            for owner, prefs in list(users.items()):
+                caldav_cfg = (prefs or {}).get("caldav") or {}
+                if caldav_cfg.get("url") or google_enabled(prefs):
+                    res = await sync_caldav(owner)
+                    if res.get("errors"):
+                        logger.info("Sincronización de calendario (%s): %s", owner, "; ".join(res["errors"])[:300])
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"caldav_background_loop: {e}")
+        await asyncio.sleep(_SYNC_INTERVAL_SECONDS)

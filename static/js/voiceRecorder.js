@@ -88,12 +88,10 @@ function _resetRecordingUI() {
     clearInterval(recordingInterval);
     recordingInterval = null;
   }
-  // Reset send button via global callback
-  const sendBtn = document.querySelector('.send-btn');
-  if (sendBtn) {
-    sendBtn.classList.remove('recording');
-    sendBtn.dataset.mode = '';
-  }
+  // RUFFS: el micrófono tiene su propio botón; _updateSendBtnIcon lo
+  // refresca y deja en paz el botón principal mientras está en «detener».
+  const micBtn = document.getElementById('chat-mic-btn');
+  if (micBtn) micBtn.classList.remove('recording');
   if (window._updateSendBtnIcon) {
     setTimeout(window._updateSendBtnIcon, 50);
   }

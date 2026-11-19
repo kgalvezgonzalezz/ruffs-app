@@ -2722,7 +2722,7 @@ async function initEmailAccountsSettings() {
     // IMAP and SMTP. Dovecot is IMAP-only here; the host is intentionally
     // blank because it may live on another machine (DNS, LAN, Tailscale).
     const PROVIDERS = {
-      gmail:    { label: 'Gmail',                  imap: { host: 'imap.gmail.com',           port: 993, starttls: false }, smtp: { host: 'smtp.gmail.com',            port: 465 } },
+      gmail:    { label: 'Gmail (contraseña de aplicación)', imap: { host: 'imap.gmail.com',           port: 993, starttls: false }, smtp: { host: 'smtp.gmail.com',            port: 465 } },
       migadu:   { label: 'Migadu',                 imap: { host: 'imap.migadu.com',          port: 993, starttls: false }, smtp: { host: 'smtp.migadu.com',           port: 465 } },
       icloud:   { label: 'iCloud',                 imap: { host: 'imap.mail.me.com',         port: 993, starttls: false }, smtp: { host: 'smtp.mail.me.com',          port: 587 } },
       outlook:  { label: 'Outlook / Office 365',   imap: { host: 'outlook.office365.com',    port: 993, starttls: false }, smtp: { host: 'smtp.office365.com',        port: 587 } },
@@ -3210,6 +3210,7 @@ async function initIntegrations() {
 const INTG_TYPES = {
   api:     { label: 'API',     icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>' },
   caldav:  { label: 'CalDAV',  icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>' },
+  google:  { label: 'Google',  icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.66 4.1-5.35 4.1-3.22 0-5.85-2.67-5.85-5.96S8.78 6.26 12 6.26c1.83 0 3.06.78 3.76 1.45l2.57-2.47C16.68 3.7 14.55 2.75 12 2.75 6.9 2.75 2.75 6.9 2.75 12S6.9 21.25 12 21.25c5.34 0 8.88-3.75 8.88-9.04 0-.6-.07-1.06-.16-1.51z"/></svg>' },
   contacts: { label: 'Contacts', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
   carddav: { label: 'CardDAV', icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>' },
   email:   { label: 'Email',   icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>' },
@@ -3294,7 +3295,7 @@ async function initUnifiedIntegrations() {
   }
 
   async function fetchAll() {
-    const [apiRes, calRes, cardRes, contactsRes, emailAccountsRes, mcpRes, vaultRes, tokenRes] = await Promise.all([
+    const [apiRes, calRes, cardRes, contactsRes, emailAccountsRes, mcpRes, vaultRes, tokenRes, googleRes] = await Promise.all([
       fetch('/api/auth/integrations', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : { integrations: [] }).catch(() => ({ integrations: [] })),
       fetch('/api/calendar/config', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
       fetch('/api/contacts/config', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
@@ -3303,8 +3304,18 @@ async function initUnifiedIntegrations() {
       fetch('/api/mcp/servers', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : []).catch(() => []),
       fetch('/api/vault/config', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
       fetch('/api/tokens', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : []).catch(() => []),
+      fetch('/api/google/status', { credentials: 'same-origin' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
     ]);
     const items = [];
+    // RUFFS: Google (Gmail + Google Calendar con una sola conexión OAuth)
+    _googleStatus = googleRes || {};
+    if (googleRes && (googleRes.connected || googleRes.needs_reconnect)) {
+      items.push({
+        type: 'google', id: '__google__', name: 'Google (Gmail + Calendar)',
+        detail: (googleRes.email || '') + (googleRes.needs_reconnect ? ' — hay que volver a conectar' : ' — correo y calendario sincronizados'),
+        enabled: !!googleRes.connected, data: googleRes,
+      });
+    }
     // API integrations
     for (const intg of (apiRes.integrations || [])) {
       items.push({ type: 'api', id: intg.id, name: intg.name || 'Unnamed', detail: intg.base_url || '', enabled: intg.enabled !== false, data: intg });
@@ -3386,6 +3397,20 @@ async function initUnifiedIntegrations() {
     </div>`;
   }
 
+  let _googleStatus = {};
+  function _googleBannerHtml() {
+    const g = _googleStatus || {};
+    if (g.connected) return '';
+    const txt = g.needs_reconnect
+      ? 'Google dejó de dar acceso a RUFFS. Vuelve a conectar para seguir sincronizando el correo y el calendario.'
+      : '¿Usas Gmail o Google Calendar? Conéctalos con tu cuenta de Google: correo y calendario sincronizados en ambos sentidos, sin contraseñas.';
+    return `<div class="intg-google-banner" style="display:flex;align-items:center;gap:10px;padding:9px 11px;margin-bottom:8px;border:1px solid color-mix(in srgb, var(--accent, var(--red)) 35%, transparent);border-radius:8px;background:color-mix(in srgb, var(--accent, var(--red)) 7%, transparent);font-size:11.5px;">
+        <span style="opacity:0.8;flex-shrink:0">${INTG_TYPES.google.icon}</span>
+        <span style="flex:1;line-height:1.4">${txt}</span>
+        <button type="button" class="admin-btn-sm intg-google-connect" style="white-space:nowrap;">${g.needs_reconnect ? 'Volver a conectar' : 'Conectar con Google'}</button>
+      </div>`;
+  }
+
   async function renderList() {
     const items = await fetchAll();
     const noticeHtml = integrationNotice ? `
@@ -3394,10 +3419,14 @@ async function initUnifiedIntegrations() {
         <button type="button" class="admin-btn-sm intg-open-email-settings" style="white-space:nowrap;">Email settings</button>
       </div>` : '';
     if (items.length === 0) {
-      listEl.innerHTML = noticeHtml + '<div style="padding:12px;opacity:0.5;font-size:12px;text-align:center">No integrations configured</div>';
+      listEl.innerHTML = _googleBannerHtml() + noticeHtml + '<div style="padding:12px;opacity:0.5;font-size:12px;text-align:center">No integrations configured</div>';
     } else {
-      listEl.innerHTML = noticeHtml + items.map(renderCard).join('');
+      listEl.innerHTML = _googleBannerHtml() + noticeHtml + items.map(renderCard).join('');
     }
+    listEl.querySelector('.intg-google-connect')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showForm('google');
+    });
     listEl.querySelector('.intg-open-email-settings')?.addEventListener('click', (e) => {
       e.stopPropagation();
       _openEmailSettings();
@@ -3423,6 +3452,7 @@ async function initUnifiedIntegrations() {
         const id = btn.dataset.intgId;
         try {
           if (type === 'api') await fetch(`/api/auth/integrations/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+          else if (type === 'google') await fetch('/api/google/disconnect', { method: 'POST', credentials: 'same-origin' });
           else if (type === 'caldav') await fetch('/api/calendar/config', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: '', username: '', password: '' }) });
           else if (type === 'contacts') {
             await fetch('/api/contacts/clear', { method: 'DELETE', credentials: 'same-origin' });
@@ -3446,6 +3476,7 @@ async function initUnifiedIntegrations() {
     formEl.style.display = '';
     if (type === 'api') showApiForm(editId);
     else if (type === 'caldav') showCalDavForm();
+    else if (type === 'google') showGoogleForm();
     else if (type === 'contacts' || type === 'carddav') showCardDavForm();
     else if (type === 'email') showEmailForm(editId);
     else if (type === 'mcp') showMcpForm(editId);
@@ -3634,6 +3665,106 @@ async function initUnifiedIntegrations() {
           el('uf-api-msg').style.color = 'var(--red)';
         }
       } catch (e) { el('uf-api-msg').textContent = 'Error: ' + e.message; el('uf-api-msg').style.color = 'var(--red)'; }
+    });
+  }
+
+  // ── Google (RUFFS): Gmail + Google Calendar con OAuth ──
+  let _googlePoll = null;
+  async function showGoogleForm() {
+    clearInterval(_googlePoll);
+    let st = {};
+    try { st = await (await fetch('/api/google/status', { credentials: 'same-origin' })).json(); } catch (_) {}
+    const box = 'font-size:11.5px;line-height:1.5;opacity:0.85';
+    let body = '';
+    if (st.connected) {
+      body = `
+        <div style="${box}">Conectado como <b>${esc(st.email || '')}</b>. El correo de Gmail aparece en Email y tus calendarios de Google en Calendario; lo que cambies en RUFFS o en Google se sincroniza en ambos sentidos (el calendario cada 10 minutos y al abrirlo).</div>
+        <div class="settings-row" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+          <button class="admin-btn-sm" id="gg-sync">Sincronizar calendario ahora</button>
+          <button class="admin-btn-sm" id="gg-connect" style="opacity:0.75">Volver a conectar</button>
+          <button class="admin-btn-sm" id="gg-disconnect" style="opacity:0.75;color:var(--red)">Desconectar</button>
+          <span id="gg-msg" style="font-size:11px"></span>
+        </div>`;
+    } else if (!st.has_client) {
+      body = `
+        <div style="${box}">Para conectar Gmail y Google Calendar, RUFFS necesita un <b>cliente OAuth</b> de tu propio proyecto de Google Cloud (gratis, se hace una sola vez, ~5 minutos):</div>
+        <ol style="${box};padding-left:18px;margin:6px 0">
+          <li>Entra en <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud</a> y crea un proyecto (por ejemplo «RUFFS»).</li>
+          <li>Activa <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener">Google Calendar API</a> y <a href="https://console.cloud.google.com/apis/library/caldav.googleapis.com" target="_blank" rel="noopener">CalDAV API</a>.</li>
+          <li>En <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Pantalla de consentimiento (Google Auth Platform)</a>: tipo <b>Externo</b>, nombre «RUFFS» y tu correo. En <b>Público</b>, pulsa <b>Publicar app</b> (si la dejas en «Prueba», Google corta el acceso cada 7 días).</li>
+          <li>En <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Clientes</a> → <b>Crear cliente</b> → tipo <b>App de escritorio</b> → <b>Descargar JSON</b>.</li>
+          <li>Sube ese archivo aquí:</li>
+        </ol>
+        <div class="settings-row" style="gap:6px;flex-wrap:wrap"><input type="file" id="gg-client-file" accept=".json,application/json" style="font-size:11px">
+          <button class="admin-btn-sm" id="gg-client-save">Guardar</button><span id="gg-msg" style="font-size:11px"></span></div>
+        <div style="${box};margin-top:6px;opacity:0.65">¿Solo quieres el correo? También puedes añadir una cuenta en Email → Gmail con una <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">contraseña de aplicación</a> (Google ya no acepta la contraseña normal). El calendario de Google solo funciona con esta conexión.</div>`;
+    } else {
+      body = `
+        <div style="${box}">${st.needs_reconnect ? '<b>Google dejó de dar acceso a RUFFS.</b> ' + esc(st.error || '') + '<br>' : ''}Pulsa el botón: se abrirá tu navegador para elegir la cuenta de Google y aceptar los permisos de <b>Gmail</b> y <b>Calendar</b>. Si Google avisa de que la app no está verificada, es tu propio proyecto: pulsa <i>Configuración avanzada → Ir a RUFFS</i>.</div>
+        <div class="settings-row" style="margin-top:8px;gap:6px;flex-wrap:wrap">
+          <button class="admin-btn-sm" id="gg-connect">Conectar con Google</button>
+          ${st.needs_reconnect ? '<button class="admin-btn-sm" id="gg-disconnect" style="opacity:0.75;color:var(--red)">Desconectar</button>' : ''}
+          <button class="admin-btn-sm" id="gg-client-del" style="opacity:0.6">Cambiar cliente OAuth</button>
+          <span id="gg-msg" style="font-size:11px"></span>
+        </div>`;
+    }
+    formEl.innerHTML = `<h2 style="font-size:13px;display:flex;align-items:center;gap:6px">${INTG_TYPES.google.icon} Google — Gmail + Calendar</h2>
+      <div class="settings-col">${body}
+        <div class="settings-row" style="margin-top:6px"><button class="admin-btn-sm" id="gg-close" style="opacity:0.7">Cerrar</button></div>
+      </div>`;
+    formEl.style.display = '';
+    try { formEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+    const msg = (t, ok) => { const m = el('gg-msg'); if (m) { m.textContent = t; m.style.color = ok === false ? 'var(--red)' : (ok ? 'var(--green,#50fa7b)' : ''); } };
+    el('gg-close')?.addEventListener('click', () => { clearInterval(_googlePoll); formEl.style.display = 'none'; });
+    el('gg-client-save')?.addEventListener('click', async () => {
+      const f = el('gg-client-file')?.files?.[0];
+      if (!f) { msg('Elige el archivo JSON descargado de Google Cloud', false); return; }
+      const fd = new FormData(); fd.append('file', f);
+      const r = await fetch('/api/google/client', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { msg(d.detail || 'No se pudo guardar', false); return; }
+      showGoogleForm();
+    });
+    el('gg-client-del')?.addEventListener('click', async () => {
+      if (!await window.styledConfirm('¿Quitar el cliente OAuth de Google guardado en RUFFS?', { confirmText: 'Quitar', danger: true })) return;
+      await fetch('/api/google/client', { method: 'DELETE', credentials: 'same-origin' });
+      showGoogleForm();
+    });
+    el('gg-connect')?.addEventListener('click', async () => {
+      msg('Abriendo Google…');
+      let d = {};
+      try { d = await (await fetch('/api/google/open', { method: 'POST', credentials: 'same-origin' })).json(); } catch (_) {}
+      if (!d.opened) {
+        if (d.auth_url) { window.open(d.auth_url, '_blank'); }
+        else { location.href = d.connect_url || '/api/google/connect'; return; }
+      }
+      msg('Termina en el navegador que se abrió; RUFFS lo detectará solo…');
+      const startedAt = Date.now();
+      _googlePoll = setInterval(async () => {
+        if (Date.now() - startedAt > 10 * 60 * 1000) { clearInterval(_googlePoll); msg('Tiempo agotado: vuelve a pulsar el botón', false); return; }
+        try {
+          const s2 = await (await fetch('/api/google/status', { credentials: 'same-origin' })).json();
+          if (s2.connected && (!st.connected || s2.email !== st.email || st.needs_reconnect)) {
+            clearInterval(_googlePoll);
+            await renderList(); notifyIntegrationsChanged();
+            showGoogleForm();
+          }
+        } catch (_) {}
+      }, 2500);
+    });
+    el('gg-sync')?.addEventListener('click', async () => {
+      msg('Sincronizando…');
+      try {
+        const d = await (await fetch('/api/google/sync', { method: 'POST', credentials: 'same-origin' })).json();
+        const errs = (d.errors || []).filter(Boolean);
+        msg(errs.length ? errs.join(' · ') : `${d.calendars || 0} calendarios, ${d.events || 0} eventos`, errs.length ? false : true);
+      } catch (e) { msg('No se pudo sincronizar', false); }
+    });
+    el('gg-disconnect')?.addEventListener('click', async () => {
+      if (!await window.styledConfirm('¿Desconectar Google? Se quita la cuenta de Gmail de RUFFS y el calendario deja de sincronizarse (los eventos ya copiados se quedan).', { confirmText: 'Desconectar', danger: true })) return;
+      await fetch('/api/google/disconnect', { method: 'POST', credentials: 'same-origin' });
+      formEl.style.display = 'none';
+      await renderList(); notifyIntegrationsChanged();
     });
   }
 

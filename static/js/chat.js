@@ -2655,7 +2655,9 @@ import createResearchSynapse from './researchSynapse.js';
         }
       } else {
         // Stop streaming TTS on any error/abort
-        if (streamingTTS && window.aiTTSManager) window.aiTTSManager.stop();
+        // RUFFS: streamingTTS se declara dentro del try; aquí no existe (antes
+        // lanzaba ReferenceError al detener y se saltaba el resto de la limpieza).
+        if (window.aiTTSManager && window.aiTTSManager.autoPlay) { try { window.aiTTSManager.stop(); } catch (_) {} }
 
         if (currentAbort && currentAbort.signal.aborted) {
           const abortReason = currentAbort._reason || '';

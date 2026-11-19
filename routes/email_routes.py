@@ -3152,13 +3152,15 @@ def setup_email_routes():
                     timeout=_IMAP_TIMEOUT_SECONDS,
                 )
                 try:
-                    conn.login(imap_user, imap_pass)
+                    from routes.email_helpers import _imap_login
+                    await asyncio.to_thread(_imap_login, conn, imap_host, imap_user, imap_pass, owner)
                     imap_result = {"ok": True}
                 finally:
                     try: conn.logout()
                     except Exception: pass
             except Exception as e:
-                imap_result = {"ok": False, "error": str(e)[:200]}
+                from src.google_oauth import friendly_login_error
+                imap_result = {"ok": False, "error": friendly_login_error(imap_host, e)}
 
         smtp_host = (body.get("smtp_host") or "").strip()
         if smtp_host:
@@ -3174,13 +3176,15 @@ def setup_email_routes():
                     if smtp_security == "starttls":
                         smtp.starttls()
                 try:
-                    smtp.login(smtp_user, smtp_pass)
+                    from routes.email_helpers import _smtp_login
+                    await asyncio.to_thread(_smtp_login, smtp, smtp_host, smtp_user, smtp_pass, owner)
                     smtp_result = {"ok": True}
                 finally:
                     try: smtp.quit()
                     except Exception: pass
             except Exception as e:
-                smtp_result = {"ok": False, "error": str(e)[:200]}
+                from src.google_oauth import friendly_login_error
+                smtp_result = {"ok": False, "error": friendly_login_error(smtp_host, e)}
 
         return {
             "ok": imap_result["ok"] and (smtp_result is None or smtp_result["ok"]),
