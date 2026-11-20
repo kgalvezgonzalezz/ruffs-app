@@ -59,6 +59,10 @@ DEFAULT_SETTINGS = {
     "stt_provider": "browser",
     "stt_model": "base",
     "stt_language": "",
+    # RUFFS: al dejar de hablar (micrófono o palabra de activación) el mensaje
+    # se envía solo; stt_silence_ms = cuánto silencio cuenta como «terminé».
+    "stt_auto_send": True,
+    "stt_silence_ms": 1500,
     "search_provider": "searxng",
     # Default fallback chain — when the primary provider fails or
     # rate-limits, we try DuckDuckGo next. Free, no API key required, so

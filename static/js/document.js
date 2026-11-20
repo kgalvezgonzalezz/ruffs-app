@@ -2158,6 +2158,11 @@ import * as Modals from './modalManager.js';
       || '';
     const isForm = _isFormBackedDoc(live);
     _syncWordView(live);
+    // La fila "word" del selector de tipo se muestra solo en documentos de
+    // Word. Sin esto solo se recalculaba al crear el panel y al cambiar el
+    // tipo, así que al abrir un .docx después de otro documento la opción
+    // seguía oculta (parecía que se había perdido la vista con formato).
+    try { _syncLangPicker(); } catch (_) {}
     // Footer main button: for a doc opened from an email attachment, morph the
     // Copy button into "Reply" (send the filled file back to the sender via the
     // signed-reply flow). Otherwise it's the normal Copy action. The click
@@ -3830,11 +3835,14 @@ import * as Modals from './modalManager.js';
       const _emailBody = (_rich && _rich.style.display !== 'none') ? _rich.innerHTML : textarea.value;
       doc.content = _buildEmailContent(to, subject, inReplyTo, references, _emailBody, sourceUid, sourceFolder, cc, bcc);
     } else if (textarea) {
-      // Don't clobber a PDF/form-backed doc's source when the textarea is empty
-      // (it's hidden behind the rendered PDF view, so its value isn't the source
-      // of truth). Overwriting here dropped the pdf_form_source marker, so after
-      // minimize→restore the doc came back blank.
-      if (!(textarea.value === '' && _isFormBackedDoc(doc.content))) {
+      // Don't clobber a PDF/form-backed or Word-backed doc's source when the
+      // textarea is empty (it's hidden behind the rendered PDF/Word view, so its
+      // value isn't the source of truth). Overwriting here dropped the
+      // pdf_form_source / docx_source marker, so after minimize→restore the doc
+      // came back blank and lost its "word" view option.
+      const _keepSource = textarea.value === ''
+        && (_isFormBackedDoc(doc.content) || _isDocxBackedDoc(doc.content));
+      if (!_keepSource) {
         doc.content = textarea.value;
       }
     }
@@ -6259,6 +6267,7 @@ import * as Modals from './modalManager.js';
       sourceEmailFolder:    doc.source_email_folder || null,
       sourceEmailAccountId: doc.source_email_account_id || null,
       sourceEmailMessageId: doc.source_email_message_id || null,
+      sourceFormat:         doc.source_format || null,   // RUFFS: Export as same format
     });
   }
 
@@ -8445,7 +8454,7 @@ function exportDocument() {
           });
           const lang = EXT_TO_LANG[ext] !== undefined ? EXT_TO_LANG[ext] : null;
           const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
-          const body = { title: baseTitle, language: lang, content };
+          const body = { title: baseTitle, language: lang, content, source_format: ext || null };
           if (sid) body.session_id = sid;
           const r = await fetch(`${API_BASE}/api/document`, {
             method: 'POST',
@@ -8527,6 +8536,8 @@ function exportDocument() {
     options.push({ label: 'Import from library', fn: () => openLibrary() });
     options.push({ label: 'Import from device', fn: () => _importFromDevice(), _divider: true });
     if (isForm) options.push({ label: 'Filled PDF (.pdf)', fn: _downloadFilledPdf });
+    // RUFFS: el mismo formato del archivo original (Word, PDF, Excel, código…)
+    if (!isForm) options.push({ label: 'Export as same format', fn: exportSameFormat, _sameFormat: true });
     options.push(
       { label: 'Export Markdown', fn: exportDocument },
       { label: 'Print as PDF', fn: exportAsPdf },
@@ -8537,6 +8548,11 @@ function exportDocument() {
       const item = document.createElement('button');
       item.className = 'doc-overflow-item';
       item.textContent = opt.label;
+      if (opt._sameFormat) {
+        // Muestra la extensión real en cuanto se conoce («… (.xlsx)»).
+        item.id = 'doc-export-same-format';
+        _sameFormatInfo().then(info => { if (info && item.isConnected) item.textContent = `Export as same format (${info.ext})`; }).catch(() => {});
+      }
       item.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); opt.fn(); });
       menu.appendChild(item);
       if (opt._divider) {
@@ -8570,6 +8586,88 @@ function exportDocument() {
     };
     setTimeout(() => document.addEventListener('click', close), 100);
     document.addEventListener('keydown', close, true);
+  }
+
+  // ── RUFFS: Export as same format ──
+  // Word (.docx) y PDF se reconstruyen en el servidor con su formato; las hojas
+  // de cálculo (.xlsx/.xls/.ods) se rehacen desde la tabla; el resto (código,
+  // texto, csv, markdown…) se descarga con su extensión original.
+  const _SAME_FORMAT_MIME = {
+    '.json': 'application/json', '.html': 'text/html', '.htm': 'text/html', '.xml': 'application/xml',
+    '.csv': 'text/csv', '.tsv': 'text/tab-separated-values', '.md': 'text/markdown', '.js': 'text/javascript',
+    '.css': 'text/css', '.svg': 'image/svg+xml',
+  };
+  const _LANG_EXT = {
+    javascript: '.js', python: '.py', html: '.html', css: '.css', markdown: '.md', json: '.json', yaml: '.yml',
+    bash: '.sh', sql: '.sql', rust: '.rs', go: '.go', java: '.java', c: '.c', cpp: '.cpp', csharp: '.cs',
+    typescript: '.ts', ruby: '.rb', php: '.php', text: '.txt', xml: '.xml', toml: '.toml', ini: '.ini', csv: '.csv',
+    powershell: '.ps1',
+  };
+
+  async function _getSourceFormat(docId) {
+    const d = docs.get(docId);
+    if (d && d.sourceFormat !== undefined) return d.sourceFormat;
+    try {
+      const r = await fetch(`${API_BASE}/api/document/${docId}`, { credentials: 'same-origin' });
+      const j = r.ok ? await r.json() : {};
+      if (d) d.sourceFormat = j.source_format || null;
+      return j.source_format || null;
+    } catch (_) { return null; }
+  }
+
+  async function _sameFormatInfo() {
+    if (!activeDocId) return null;
+    const live = document.getElementById('doc-editor-textarea')?.value || docs.get(activeDocId)?.content || '';
+    if (_isDocxBackedDoc(live)) return { ext: '.docx', kind: 'docx' };
+    if (_isFormBackedDoc(live)) return { ext: '.pdf', kind: 'pdf' };
+    const sf = (await _getSourceFormat(activeDocId) || '').toLowerCase();
+    if (['.xlsx', '.xls', '.ods'].includes(sf)) return { ext: sf, kind: 'sheet' };
+    if (sf === '.pdf') return { ext: '.pdf', kind: 'print' };
+    const lang = document.getElementById('doc-language-select')?.value || docs.get(activeDocId)?.language || '';
+    return { ext: sf || _LANG_EXT[lang] || '.txt', kind: 'text' };
+  }
+
+  async function exportSameFormat() {
+    const info = await _sameFormatInfo();
+    if (!info) return;
+    if (info.kind === 'docx') return exportAsDocx();
+    if (info.kind === 'pdf') return _downloadFilledPdf();
+    if (info.kind === 'print') return exportAsPdf();
+    const textarea = document.getElementById('doc-editor-textarea');
+    if (!textarea) return;
+    await _saveActiveDocBeforeExport();
+    const base = _getExportBaseName();
+    if (info.kind === 'sheet') {
+      try {
+        if (!window.XLSX) await _loadScriptOnce('/static/lib/xlsx.full.min.js');
+        const wb = window.XLSX.read(textarea.value || '', { type: 'string', raw: true });
+        // Números claros como números (Excel suma/ordena bien); el resto, texto
+        // tal cual (sin convertir «1-2» en fecha).
+        for (const name of wb.SheetNames) {
+          const sh = wb.Sheets[name];
+          for (const ref of Object.keys(sh)) {
+            if (ref[0] === '!') continue;
+            const c = sh[ref];
+            if (c && c.t === 's' && /^-?\d+(?:[.,]\d+)?$/.test(String(c.v).trim()) && !/^0\d/.test(String(c.v).trim())) {
+              c.v = Number(String(c.v).trim().replace(',', '.')); c.t = 'n'; delete c.w;
+            }
+          }
+        }
+        const bookType = info.ext.slice(1);   // xlsx | xls | ods
+        const out = window.XLSX.write(wb, { bookType, type: 'array' });
+        const mime = bookType === 'ods' ? 'application/vnd.oasis.opendocument.spreadsheet'
+          : bookType === 'xls' ? 'application/vnd.ms-excel'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        _downloadBlob(new Blob([out], { type: mime }), base + info.ext);
+        if (uiModule) uiModule.showToast(`Exportado como ${info.ext}`);
+      } catch (e) {
+        if (uiModule) uiModule.showError('No se pudo exportar la hoja de cálculo: ' + (e.message || e));
+      }
+      return;
+    }
+    const mime = (_SAME_FORMAT_MIME[info.ext] || 'text/plain') + ';charset=utf-8';
+    _downloadBlob(new Blob([textarea.value || ''], { type: mime }), base + info.ext);
+    if (uiModule) uiModule.showToast(`Exportado como ${info.ext}`);
   }
 
   function exportAsHtml() {

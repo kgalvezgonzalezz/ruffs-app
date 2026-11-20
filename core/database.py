@@ -207,6 +207,9 @@ class Document(TimestampMixin, Base):
     # Library + search. Owning the row directly is robust against that.
     owner           = Column(String, nullable=True, index=True)
     tidy_verdict    = Column(String, nullable=True)        # "keep", "junk", or None (not yet reviewed)
+    # RUFFS: extensión del archivo original (".py", ".xlsx", ".docx"…) para
+    # «Export as same format» desde el editor.
+    source_format   = Column(String, nullable=True)
     # Provenance: if this document was created by opening an email attachment,
     # these point back to the source email so the "Sign and reply" flow can
     # thread a response on the original conversation.
@@ -1197,6 +1200,7 @@ def _migrate_add_doc_source_email_cols():
         "source_email_folder":     "VARCHAR",
         "source_email_account_id": "VARCHAR",
         "source_email_message_id": "VARCHAR",
+        "source_format":           "VARCHAR",   # RUFFS: Export as same format
     }
     try:
         with engine.connect() as conn:

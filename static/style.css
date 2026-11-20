@@ -2541,6 +2541,16 @@ body.bg-pattern-sparkles {
       background: color-mix(in srgb, var(--send-btn-bg, var(--red)) 25%, transparent);
       border-color: var(--fg);
     }
+    /* RUFFS: esperando la palabra de activación — anillo suave */
+    .chat-mic-btn.wake-listening {
+      border-color: color-mix(in srgb, var(--accent, var(--red)) 70%, transparent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, var(--red)) 25%, transparent);
+      animation: wake-ring 2.6s ease-in-out infinite;
+    }
+    @keyframes wake-ring {
+      0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--red)) 20%, transparent); }
+      50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent, var(--red)) 30%, transparent); }
+    }
     .chat-mic-btn.recording {
       background: var(--red);
       border-color: var(--red);

@@ -1117,6 +1117,10 @@ app.include_router(calendar_router)
 from routes.google_routes import setup_google_routes
 app.include_router(setup_google_routes())
 
+# RUFFS: voz local sin internet (dictado y palabra de activación con Vosk)
+from routes.voice_routes import setup_voice_routes
+app.include_router(setup_voice_routes())
+
 # Shell (user-facing command execution)
 from routes.shell_routes import setup_shell_routes
 app.include_router(setup_shell_routes())

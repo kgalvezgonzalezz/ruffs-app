@@ -75,6 +75,14 @@ def _open_window(url: str, smoke: float = 0) -> None:
 
     # Window icon: Windows needs an .ico; macOS takes the app bundle's icon.
     icon = os.path.join(HERE, "ruffs.ico") if os.name == "nt" else ""
+    # pywebview trae ALLOW_DOWNLOADS = False por defecto: con eso, WebView2
+    # cancela en silencio cada descarga (exportar a Word, PDF, ZIP…) y la UI
+    # igual muestra "Descargado". Hay que activarlo antes de create_window.
+    try:
+        webview.settings['ALLOW_DOWNLOADS'] = True
+    except Exception:  # versión de pywebview sin ese ajuste
+        pass
+
     window = webview.create_window(
         "RUFFS", url, width=1320, height=860, min_size=(900, 600),
         background_color="#06071a", text_select=True,

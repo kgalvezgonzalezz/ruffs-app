@@ -1634,6 +1634,7 @@
       <label class="settings-label">Provider</label>
       <select id="set-sttProviderSelect" class="settings-select">
         <option value="disabled">Disabled</option>
+        <option value="vosk">RUFFS local (sin internet)</option>
         <option value="browser">Browser API</option>
         <option value="local">Local (Whisper)</option>
       </select>
@@ -1654,6 +1655,30 @@
       <input id="set-sttLangInput" type="text" class="settings-select" placeholder="es (opcional)">
     </div>
     
+    <!-- RUFFS: estado de la voz local (Vosk) -->
+    <div id="set-sttVoskRow" style="display:none;margin-top:10px;font-size:12px;line-height:1.45;opacity:0.85;">
+      <span id="set-sttVoskStatus"></span>
+      <button type="button" class="admin-btn-sm" id="set-sttVoskDownload" style="display:none;margin-left:6px;">Descargar voz local</button>
+    </div>
+
+    <!-- RUFFS: enviar solo al dejar de hablar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:8px;border-top:1px solid color-mix(in srgb, var(--fg) 10%, transparent);">
+      <div>
+        <div style="font-weight:500;font-size:13px;">Enviar al dejar de hablar</div>
+        <div style="font-size:11px;opacity:0.6;">Con el micrófono o la palabra de activación: cuando terminas de hablar, el mensaje se envía solo. Apagado: pulsas el micrófono para terminar y revisas antes de enviar.</div>
+      </div>
+      <label class="admin-switch"><input type="checkbox" id="set-sttAutoSendToggle" checked><span class="admin-slider"></span></label>
+    </div>
+    <div id="set-sttSilenceRow" style="display:flex;align-items:center;gap:0.75rem;margin-top:8px;">
+      <label class="settings-label">Silencio para terminar</label>
+      <select id="set-sttSilenceSelect" class="settings-select">
+        <option value="1000">1 segundo</option>
+        <option value="1500">1,5 segundos</option>
+        <option value="2000">2 segundos</option>
+        <option value="3000">3 segundos</option>
+      </select>
+    </div>
+
     <div id="set-sttSettingsMsg" style="margin-top:10px;font-size:12px;font-weight:bold;"></div>
   </div>
 </div>

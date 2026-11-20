@@ -965,10 +965,10 @@ async function initTtsSettings() {
   if (wakeWordToggle) {
     wakeWordToggle.addEventListener('change', function() {
       if (wakeWordKeywordRow) wakeWordKeywordRow.style.display = wakeWordToggle.checked ? 'flex' : 'none';
-      if (window.wakeWordDetector) {
-        wakeWordDetector.enabled = wakeWordToggle.checked;
-        if (wakeWordToggle.checked) wakeWordDetector.start();
-        else wakeWordDetector.stop();
+      // RUFFS: la palabra de activación la maneja voiceRecorder (voz local
+      // en la ventana de RUFFS, la del navegador en Chrome/Edge).
+      if (window.ruffsVoice) {
+        window.ruffsVoice.configure({ wake: wakeWordToggle.checked, keyword: (wakeWordInput && wakeWordInput.value) || 'RUFFS' });
       }
       saveTTS();
     });
@@ -977,7 +977,7 @@ async function initTtsSettings() {
   // Wake-word keyword input
   if (wakeWordInput) {
     wakeWordInput.addEventListener('change', function() {
-      if (window.wakeWordDetector) wakeWordDetector.setKeyword(wakeWordInput.value);
+      if (window.ruffsVoice) window.ruffsVoice.configure({ keyword: wakeWordInput.value || 'RUFFS' });
       saveTTS();
     });
   }
@@ -1013,31 +1013,8 @@ async function initTtsSettings() {
             var match = voices.find(function(v) { return v.name.toLowerCase() === target; }) ||
                         voices.find(function(v) { return v.name.toLowerCase().includes(target); });
 
-  // Initialize WakeWordDetector on page load
-  if (typeof WakeWordDetector !== 'undefined') {
-    if (!window.wakeWordDetector) {
-      window.wakeWordDetector = new WakeWordDetector();
-      console.log('[WakeWord] Detector created, keyword:', window.wakeWordDetector.keyword);
-    }
-    window.wakeWordDetector.onActivate = function(transcript) {
-      console.log('[WakeWord] Activated with:', transcript);
-      // Detener wake word para liberar SpeechRecognition
-      if (window.wakeWordDetector) window.wakeWordDetector.stop();
-      window._wakeWordRecordingTriggered = true;
-      var chatInput = document.getElementById('message');
-      if (chatInput) {
-        chatInput.value = '';
-        chatInput.dispatchEvent(new Event('input', { bubbles: true }));
-        var sendBtn = document.getElementById('send-btn') || document.querySelector('.send-btn, button[aria-label*="Send"], button[title*="Send"]');
-        if (sendBtn) sendBtn.click();
-      }
-    };
-    console.log('[WakeWord] onActivate assigned, keyword:', window.wakeWordDetector.keyword);
-    if (wakeWordToggle && wakeWordToggle.checked) {
-      window.wakeWordDetector.start();
-      console.log('[WakeWord] Auto-started from settings');
-    }
-  }
+  // RUFFS: la palabra de activación arranca al cargar RUFFS (app.js →
+  // voiceRecorder.configure), ya no al abrir Ajustes.
             if (match) utt.voice = match;
           }
           utt.rate = parseFloat(speedSelect.value) || 1;
@@ -1085,8 +1062,40 @@ async function initSttSettings() {
   var sttMsg = el('set-sttSettingsMsg');
   var sttEnabledToggle = el('set-sttEnabledToggle');
   var sttConfigWrap = el('set-sttConfigWrap');
+  var autoSendToggle = el('set-sttAutoSendToggle');
+  var silenceSelect = el('set-sttSilenceSelect');
+  var silenceRow = el('set-sttSilenceRow');
+  var voskRow = el('set-sttVoskRow');
+  var voskStatus = el('set-sttVoskStatus');
+  var voskDownload = el('set-sttVoskDownload');
   // STT was removed from AI Defaults — bail if the UI isn't present.
   if (!provSel) return;
+
+  // RUFFS: estado de la voz local (Vosk). Dentro de la ventana de RUFFS el
+  // reconocimiento del navegador no funciona, así que «Browser API» también
+  // usa la voz local ahí.
+  var _voskPoll = null;
+  async function refreshVoskStatus() {
+    if (!voskRow) return;
+    var eff = window.ruffsVoice && window.ruffsVoice.effectiveProvider ? window.ruffsVoice.effectiveProvider() : provSel.value;
+    var uses = provSel.value === 'vosk' || (provSel.value === 'browser' && eff === 'vosk');
+    voskRow.style.display = uses && provSel.value !== 'disabled' ? '' : 'none';
+    if (!uses) return;
+    try {
+      var st = await (await fetch('/api/voice/status' + (langInput.value ? '?lang=' + encodeURIComponent(langInput.value.trim()) : ''), { credentials: 'same-origin' })).json();
+      var note = provSel.value === 'browser' ? 'En la ventana de RUFFS el reconocimiento del navegador no funciona: se usa la voz local. ' : '';
+      if (!st.engine) { voskStatus.textContent = note + 'El motor de voz local no está instalado en este RUFFS.'; voskDownload.style.display = 'none'; return; }
+      var d = st.download || {};
+      if (st.ready) { voskStatus.textContent = note + 'Voz local lista (' + st.model + ', funciona sin internet).'; voskDownload.style.display = 'none'; clearInterval(_voskPoll); _voskPoll = null; }
+      else if (d.status === 'downloading') { voskStatus.textContent = note + 'Descargando la voz local… ' + Math.round((d.progress || 0) * 100) + '%'; voskDownload.style.display = 'none'; if (!_voskPoll) _voskPoll = setInterval(refreshVoskStatus, 1500); }
+      else { voskStatus.textContent = note + (d.error ? d.error + ' ' : '') + 'Hay que descargar la voz local una vez (' + (st.size_mb || 40) + ' MB).'; voskDownload.style.display = ''; }
+    } catch (e) { voskStatus.textContent = 'No se pudo consultar la voz local.'; }
+  }
+  if (voskDownload) voskDownload.addEventListener('click', async function() {
+    voskDownload.style.display = 'none';
+    await fetch('/api/voice/model', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lang: langInput.value.trim() }) }).catch(function() {});
+    refreshVoskStatus();
+  });
 
   function isEndpoint() { return provSel.value.startsWith('endpoint:'); }
   function getModel() { return isEndpoint() ? modelInput.value : modelSelect.value; }
@@ -1097,6 +1106,8 @@ async function initSttSettings() {
     var showLang = prov !== 'disabled';
     modelRow.style.display = showModel ? 'flex' : 'none';
     langRow.style.display = showLang ? 'flex' : 'none';
+    if (silenceRow && autoSendToggle) silenceRow.style.display = autoSendToggle.checked ? 'flex' : 'none';
+    refreshVoskStatus();
     if (isEndpoint()) {
       modelSelect.style.display = 'none'; modelInput.style.display = '';
     } else {
@@ -1135,7 +1146,10 @@ async function initSttSettings() {
     if (settings.stt_model) { modelSelect.value = settings.stt_model; modelInput.value = settings.stt_model; }
     if (settings.stt_language) langInput.value = settings.stt_language;
     if (sttEnabledToggle) sttEnabledToggle.checked = settings.stt_enabled !== false;
+    if (autoSendToggle) autoSendToggle.checked = settings.stt_auto_send !== false;
+    if (silenceSelect) silenceSelect.value = String(settings.stt_silence_ms || 1500);
   } catch (e) { console.warn('Failed to load STT settings', e); }
+  updateVisibility();
 
   syncSttDisabled();
   updateVisibility();
@@ -1152,7 +1166,13 @@ async function initSttSettings() {
       var enabled = sttEnabledToggle ? sttEnabledToggle.checked : false;
       await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stt_enabled: enabled, stt_provider: provSel.value, stt_model: getModel() || 'base', stt_language: langInput.value.trim() }) });
+        body: JSON.stringify({ stt_enabled: enabled, stt_provider: provSel.value, stt_model: getModel() || 'base', stt_language: langInput.value.trim(),
+          stt_auto_send: autoSendToggle ? autoSendToggle.checked : true, stt_silence_ms: silenceSelect ? parseInt(silenceSelect.value, 10) || 1500 : 1500 }) });
+      if (window.ruffsVoice) window.ruffsVoice.configure({
+        autoSend: autoSendToggle ? autoSendToggle.checked : true,
+        silenceMs: silenceSelect ? parseInt(silenceSelect.value, 10) || 1500 : 1500,
+        lang: langInput.value.trim(),
+      });
       sttMsg.textContent = 'Saved'; sttMsg.style.color = 'var(--fg)'; setTimeout(() => { sttMsg.textContent = ''; }, 2000);
       // Notify voiceRecorder of effective provider and update send button icon
       var eff = effectiveProvider();
@@ -1165,8 +1185,10 @@ async function initSttSettings() {
   provSel.addEventListener('change', function() { updateVisibility(); saveSTT(); });
   modelSelect.addEventListener('change', saveSTT);
   modelInput.addEventListener('change', saveSTT);
-  langInput.addEventListener('change', saveSTT);
+  langInput.addEventListener('change', function() { saveSTT(); refreshVoskStatus(); });
   if (sttEnabledToggle) sttEnabledToggle.addEventListener('change', function() { syncSttDisabled(); saveSTT(); });
+  if (autoSendToggle) autoSendToggle.addEventListener('change', function() { updateVisibility(); saveSTT(); });
+  if (silenceSelect) silenceSelect.addEventListener('change', saveSTT);
 }
 
 /* ═══════════════════════════════════════════

@@ -1521,7 +1521,7 @@ async def _import_file_to_editor(args: Dict, owner: Optional[str]) -> Dict:
         try:
             doc_id = str(_uuid.uuid4())
             db.add(Document(id=doc_id, title=title, language=language, current_content=content,
-                            version_count=1, is_active=True, owner=owner))
+                            version_count=1, is_active=True, owner=owner, source_format=ext or None))
             db.add(DocumentVersion(id=str(_uuid.uuid4()), document_id=doc_id, version_number=1,
                                    content=content, summary=f"Importado de {name}", source="upload"))
             db.commit()

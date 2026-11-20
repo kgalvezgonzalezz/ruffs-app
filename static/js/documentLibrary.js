@@ -1506,6 +1506,28 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
         const isSpreadsheet = ['.xlsx', '.xls', '.ods'].includes(ext);
         const isPdf = ext === '.pdf';
+        const isDocx = ext === '.docx';
+
+        if (isDocx) {
+          // RUFFS: un .docx se importa con su importador propio, que guarda el
+          // original en el servidor. Así el editor puede mostrarlo con su
+          // formato (vista "word") y exportarlo igual que el archivo de Word.
+          // Antes caía en readFileContent() -> mammoth, que lo aplanaba a
+          // markdown y perdía estilos, imágenes, tablas y encabezados.
+          const fd = new FormData();
+          fd.append('file', file);
+          const res = await fetch(`${API_BASE}/api/documents/import-docx`, {
+            method: 'POST',
+            body: fd,
+          });
+          if (!res.ok) {
+            let _e = `HTTP ${res.status}`;
+            try { const _j = await res.json(); _e = _j.detail || _j.error || _e; } catch {}
+            throw new Error('DOCX import failed: ' + _e);
+          }
+          imported++;
+          continue;
+        }
 
         if (isPdf) {
           // Backend handles save + AcroForm detection in one shot — picks the
@@ -1539,7 +1561,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             const res = await fetch(`${API_BASE}/api/document`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title: sheetTitle, language: 'csv', content: csv }),
+              body: JSON.stringify({ title: sheetTitle, language: 'csv', content: csv, source_format: ext }),
             });
             if (!res.ok) throw new Error('Server error');
           }
@@ -1549,7 +1571,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           const res = await fetch(`${API_BASE}/api/document`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: baseTitle, language, content }),
+            body: JSON.stringify({ title: baseTitle, language, content, source_format: ext || null }),
           });
           if (!res.ok) throw new Error('Server error');
           imported++;

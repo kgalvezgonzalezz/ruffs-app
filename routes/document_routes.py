@@ -112,6 +112,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                 # request is unauthenticated (single-user / localhost bypass).
                 owner=user or (session.owner if session else None),
             )
+            from routes.document_helpers import clean_source_format
+            doc.source_format = clean_source_format(req.source_format)
             ver = DocumentVersion(
                 id=ver_id,
                 document_id=doc_id,

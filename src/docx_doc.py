@@ -437,7 +437,8 @@ def create_document(data: bytes, title: str, owner: Optional[str], session_id: O
     try:
         doc_id = str(uuid.uuid4())
         doc = Document(id=doc_id, session_id=session_id, title=title or "Documento", language="markdown",
-                       current_content=content, version_count=1, is_active=True, owner=owner)
+                       current_content=content, version_count=1, is_active=True, owner=owner,
+                       source_format=".docx")
         ver = DocumentVersion(id=str(uuid.uuid4()), document_id=doc_id, version_number=1, content=content,
                               summary="Importado de Word (.docx)", source="upload")
         db.add(doc)

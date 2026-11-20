@@ -13,6 +13,9 @@ SQLAlchemy
 pypdf
 # RUFFS: abrir, editar y descargar documentos de Word (.docx) con su formato (MIT)
 python-docx>=1.1
+# RUFFS: voz local sin internet (dictado y palabra de activación), Apache-2.0.
+# 0.3.45 no trae rueda para Mac: allí se instala 0.3.44 (universal2).
+vosk>=0.3.44
 beautifulsoup4
 charset-normalizer
 numpy

@@ -24,6 +24,16 @@ class DocumentCreate(BaseModel):
     title: str = "Untitled"
     language: Optional[str] = None
     content: str = ""
+    source_format: Optional[str] = None   # RUFFS: extensión original (".py", ".xlsx"…)
+
+
+def clean_source_format(value) -> Optional[str]:
+    """RUFFS: «.PY» → «.py»; cualquier cosa rara → None."""
+    import re as _re
+    v = (value or "").strip().lower()
+    if v and not v.startswith("."):
+        v = "." + v
+    return v if _re.fullmatch(r"\.[a-z0-9]{1,8}", v or "") else None
 
 class DocumentUpdate(BaseModel):
     content: str
@@ -55,6 +65,7 @@ def _doc_to_dict(doc: Document) -> Dict[str, Any]:
         "source_email_folder":     getattr(doc, "source_email_folder", None),
         "source_email_account_id": getattr(doc, "source_email_account_id", None),
         "source_email_message_id": getattr(doc, "source_email_message_id", None),
+        "source_format":           getattr(doc, "source_format", None),
     }
 
 def _version_to_dict(v: DocumentVersion) -> Dict[str, Any]:

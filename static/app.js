@@ -1252,7 +1252,9 @@ function initializeEventListeners() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Auto-sort failed');
         if (data.status === 'ok') {
-          sessionModule.setSortMode(null); // clear sort — tidy creates manual folder order
+          // RUFFS: guardar el modo «carpetas» (antes se borraba el modo guardado y,
+          // al reiniciar, la lista volvía a «activos» y ocultaba las carpetas).
+          sessionModule.setSortMode('group');
           _syncSortChecks();
           if (skipLlm) {
             // No-AI path: just report what got cleaned. No "unfiled
@@ -3538,6 +3540,9 @@ function startOdysseusApp() {
   }
 
   chatForm.onsubmit = handleSubmit;
+  // RUFFS: el dictado con envío automático (micrófono / palabra de activación)
+  // envía por aquí, igual que pulsar Enter.
+  window._ruffsSubmitChat = () => handleSubmit(new Event('submit', { cancelable: true }));
 
   // ── Botón principal (nuevo chat / enviar / detener) + micrófono aparte ──
   const sendBtn = document.querySelector('.send-btn');
@@ -3566,10 +3571,14 @@ function startOdysseusApp() {
   function _syncMicBtn() {
     if (!micBtn) return;
     const recording = voiceRecorderModule.getIsRecording();
+    const wake = voiceRecorderModule.getWakeState ? voiceRecorderModule.getWakeState() : 'off';
     micBtn.style.display = (_isSttEnabled() || recording) ? '' : 'none';
     micBtn.classList.toggle('recording', recording);
+    micBtn.classList.toggle('wake-listening', !recording && wake === 'listening');
     micBtn.setAttribute('aria-pressed', recording ? 'true' : 'false');
-    micBtn.title = recording ? 'Terminar dictado' : 'Dictar por voz';
+    const _kw = (voiceRecorderModule.getPrefs ? voiceRecorderModule.getPrefs().keyword : '') || 'RUFFS';
+    micBtn.title = recording ? 'Terminar dictado'
+      : (wake === 'listening' ? `Escuchando «${_kw}»: dilo para hablarme, o pulsa para dictar` : 'Dictar por voz');
     micBtn.setAttribute('aria-label', micBtn.title);
     micBtn.innerHTML = recording ? _stopIcon : _micIcon;
   }
@@ -3971,6 +3980,14 @@ function startOdysseusApp() {
       const eff = s.stt_enabled === false ? 'disabled' : (s.stt_provider || 'disabled');
       try { localStorage.setItem('sttProvider', eff); } catch (_) {}
       voiceRecorderModule._sttProvider = eff;
+      // RUFFS: preferencias de voz y palabra de activación desde el arranque
+      voiceRecorderModule.configure({
+        autoSend: s.stt_auto_send !== false,
+        silenceMs: s.stt_silence_ms || 1500,
+        lang: s.stt_language || '',
+        keyword: s.tts_wake_word || 'RUFFS',
+        wake: s.tts_wake_word_enabled === true && eff !== 'disabled',
+      });
       if (window._updateSendBtnIcon) window._updateSendBtnIcon();
     })
     .catch(() => {});

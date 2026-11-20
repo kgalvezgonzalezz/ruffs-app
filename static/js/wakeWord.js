@@ -10,7 +10,7 @@
 
 class WakeWordDetector {
   constructor() {
-    this.keyword = 'odysseus';
+    this.keyword = 'ruffs';
     this.enabled = false;
     this.listening = false;
     this.recognition = null;
@@ -82,13 +82,27 @@ class WakeWordDetector {
       if (r.isFinal) finalText += r[0].transcript;
     }
     const text = finalText.toLowerCase().trim();
-    if (!text || !text.includes(this.keyword)) return;
+    if (!text) return;
+    // RUFFS: el reconocedor suele escribir «RUFFS» como rafs/rufus/ruff…
+    const variants = [this.keyword].concat(this.keyword === 'ruffs'
+      ? ['rufs', 'rafs', 'raf', 'rufus', 'ruff', 'rough', 'roughs', 'rugs'] : []);
+    // Palabra a palabra (sin signos): la clave puede ser de una o varias palabras.
+    const clean = (s) => s.toLowerCase().replace(/[^a-z0-9áéíóúüñ\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const words = clean(finalText);
+    let after = -1;
+    for (const v of variants) {
+      const kw = clean(v);
+      for (let i = 0; kw.length && i + kw.length <= words.length; i++) {
+        if (kw.every((w, j) => words[i + j] === w)) { if (after < 0 || i + kw.length < after) after = i + kw.length; break; }
+      }
+    }
+    if (after < 0) return;
     console.log('[WakeWord] Detected! Text:', finalText);
-    const idx = text.indexOf(this.keyword);
-    const command = finalText.substring(idx + this.keyword.length).trim();
+    const command = words.slice(after).join(' ');
     this.stop();
     this._setStatus('active');
-    if (this.onActivate) this.onActivate(command || finalText);
+    // Solo lo dicho DESPUÉS de la palabra clave ('' = empezar a escuchar).
+    if (this.onActivate) this.onActivate(command);
   }
 
   _onError(event) {

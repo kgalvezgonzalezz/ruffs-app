@@ -10,6 +10,264 @@
  *   "endpoint:<id>"  — send recording to server /api/stt/transcribe (API)
  */
 
+import voiceLocal from './voiceLocal.js';
+
+// ── RUFFS: voz local, envío automático y palabra de activación ──────────────
+// Dentro de la ventana de RUFFS (WebView2 / WKWebView) el reconocimiento del
+// navegador falla siempre con «network»: ahí «browser» usa la voz local
+// (Vosk, sin internet). En Chrome/Edge normales sigue siendo el del navegador.
+const _prefs = { autoSend: true, silenceMs: 1500, lang: '', wake: false, keyword: 'RUFFS' };
+let _cb = {};            // showToast / showError / onFileCreated de la última grabación
+let _local = null;       // dictado local en curso
+let _wake = null;        // escucha de la palabra clave en curso
+let _wakeTimer = null;
+let _wakeErrorShown = false;
+let _vad = null;         // detector de silencio para los otros proveedores
+
+function _isEmbeddedWindow() {
+  return !!(window.pywebview || (window.chrome && window.chrome.webview)
+    || (window.webkit && window.webkit.messageHandlers));
+}
+
+function _browserSttWorks() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition) && !_isEmbeddedWindow();
+}
+
+export function effectiveProvider() {
+  if (_sttProvider === 'vosk') return 'vosk';
+  if (_sttProvider === 'browser' && !_browserSttWorks()) return 'vosk';
+  return _sttProvider;
+}
+
+function _syncUI() { if (window._updateSendBtnIcon) window._updateSendBtnIcon(); }
+
+function _ruffsIsSpeaking() {
+  return !!((window.aiTTSManager && window.aiTTSManager.isPlaying)
+    || (window.speechSynthesis && window.speechSynthesis.speaking));
+}
+
+function _beep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    [660, 880].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.12;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.11);
+      o.start(t); o.stop(t + 0.12);
+    });
+    setTimeout(() => ctx.close().catch(() => {}), 600);
+  } catch (_) {}
+}
+
+function _toast(msg, ms) { if (_cb.showToast) _cb.showToast(msg, ms); else if (window.uiModule?.showToast) window.uiModule.showToast(msg, ms); }
+function _error(msg) { if (_cb.showError) _cb.showError(msg); else if (window.uiModule?.showError) window.uiModule.showError(msg); }
+
+function _autoSend() {
+  const btn = document.querySelector('.send-btn');
+  if (btn && btn.dataset.mode === 'streaming') {
+    // Pulsar enviar ahora DETENDRÍA la respuesta en curso: se deja escrito.
+    _toast('Texto listo en el cuadro: envíalo cuando RUFFS termine de responder');
+    return;
+  }
+  if (typeof window._ruffsSubmitChat === 'function') window._ruffsSubmitChat();
+}
+
+function _afterTranscript(text, showToast) {
+  if (!text) return;
+  insertTranscription(text, _prefs.autoSend ? null : showToast);
+  if (_prefs.autoSend) _autoSend();
+}
+
+function _showPartial(base, text) {
+  const input = document.getElementById('message');
+  if (!input) return;
+  input.value = base ? (text ? base + ' ' + text : base) : text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+let _modelPromise = null;
+async function _ensureLocalModel({ quiet = false } = {}) {
+  if (!_modelPromise) {
+    let lastPct = -1;
+    _modelPromise = voiceLocal.ensureModel({
+      lang: _prefs.lang,
+      onProgress: (p, st) => {
+        const pct = Math.floor(p * 10) * 10;
+        if (!quiet && pct !== lastPct) { lastPct = pct; _toast(`Descargando la voz local (${st.size_mb || 40} MB, una sola vez)… ${pct}%`, 4000); }
+      },
+    });
+    _modelPromise.catch(() => { _modelPromise = null; });
+  }
+  return _modelPromise;
+}
+
+async function _startLocalDictation() {
+  _pauseWake();
+  isRecording = true;
+  _syncUI();
+  try {
+    await _ensureLocalModel();
+  } catch (e) {
+    isRecording = false; _syncUI();
+    _error(e.message || String(e));
+    _resumeWakeSoon();
+    return;
+  }
+  const input = document.getElementById('message');
+  const base = input ? input.value.trim() : '';
+  const auto = _prefs.autoSend;
+  _local = voiceLocal.listen({
+    mode: 'dictate', lang: _prefs.lang,
+    silenceMs: auto ? _prefs.silenceMs : 60 * 60 * 1000,
+    maxWaitMs: auto ? 8000 : 60 * 60 * 1000,
+    onPartial: (t) => _showPartial(base, t),
+  });
+  _toast(auto ? 'Te escucho… al terminar de hablar se envía solo' : 'Te escucho… pulsa el micrófono para terminar');
+  try {
+    const text = await _local.done;
+    _showPartial(base, '');
+    if (text) _afterTranscript(text, _cb.showToast);
+    else _toast('No se oyó nada');
+  } catch (e) {
+    _showPartial(base, '');
+    if ((e && e.message) !== 'cancelado') _error('Voz local: ' + (e.message || e));
+  } finally {
+    _local = null;
+    _resetRecordingUI();
+    _resumeWakeSoon();
+  }
+}
+
+// Detector de silencio para los demás proveedores (navegador en Chrome,
+// Whisper local o por API): al callar se termina la grabación sola.
+function _watchSilence(stream) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048;
+    src.connect(an);
+    const buf = new Float32Array(an.fftSize);
+    let floor = 0.01, heard = false, last = Date.now();
+    const t0 = Date.now();
+    const timer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      if (rms > Math.max(0.012, floor * 2.5)) { heard = true; last = Date.now(); }
+      else floor = floor * 0.95 + rms * 0.05;
+      const now = Date.now();
+      if ((heard && now - last > _prefs.silenceMs) || (!heard && now - t0 > 8000)) {
+        stop();
+        if (isRecording) stopRecording();
+      }
+    }, 100);
+    const stop = () => { clearInterval(timer); try { ctx.close(); } catch (_) {} };
+    return { stop };
+  } catch (_) { return null; }
+}
+
+// ── Palabra de activación ──
+export function getWakeState() {
+  if (!_wake) return 'off';
+  return _wake.mode === 'dictate' || _wake.woken ? 'dictating' : 'listening';
+}
+
+function _pauseWake() {
+  clearTimeout(_wakeTimer);
+  if (!_wake) return;
+  if (_wake.browser) { try { window.wakeWordDetector && window.wakeWordDetector.stop(); } catch (_) {} _wake = null; }
+  else if (_wake.mode !== 'dictate') { const w = _wake; _wake = null; w.cancel(); }
+  _syncUI();
+}
+
+function _resumeWakeSoon(ms = 900) {
+  clearTimeout(_wakeTimer);
+  if (!_prefs.wake || _sttProvider === 'disabled') return;
+  _wakeTimer = setTimeout(_startWake, ms);
+}
+
+async function _startWake() {
+  if (_wake || _local || isRecording || !_prefs.wake || _sttProvider === 'disabled') return;
+  const kw = (_prefs.keyword || 'RUFFS').trim() || 'RUFFS';
+  if (effectiveProvider() !== 'vosk' && window.wakeWordDetector && _browserSttWorks()) {
+    // Chrome/Edge normales: detector del navegador.
+    const det = window.wakeWordDetector;
+    det.setKeyword(kw);
+    if (_prefs.lang) det.setLanguage(_prefs.lang);
+    det.enabled = true;
+    det.onActivate = (command) => {
+      _wake = null;
+      _beep();
+      const words = (command || '').trim().split(/\s+/).filter(Boolean);
+      if (words.length >= 2 && (command || '').toLowerCase().indexOf(kw.toLowerCase()) === -1) {
+        _afterTranscript(command.trim(), null);
+        _resumeWakeSoon(1500);
+      } else {
+        startRecording(_cb.onFileCreated, _cb.showToast, _cb.showError);
+      }
+    };
+    _wake = { browser: true, mode: 'wake', cancel() { det.stop(); } };
+    det.start();
+    _syncUI();
+    return;
+  }
+  try {
+    await _ensureLocalModel({ quiet: true });
+  } catch (e) {
+    if (!_wakeErrorShown) { _wakeErrorShown = true; _error('Palabra de activación: ' + (e.message || e)); }
+    return;
+  }
+  if (_wake || _local || isRecording || !_prefs.wake) return;
+  let base = '';
+  const ctl = voiceLocal.listen({
+    mode: 'wake', keyword: kw, lang: _prefs.lang,
+    silenceMs: _prefs.silenceMs, maxWaitMs: 6000,
+    shouldIgnoreWake: _ruffsIsSpeaking,
+    onWake: () => {
+      ctl.woken = true;
+      isRecording = true;
+      const input = document.getElementById('message');
+      base = input ? input.value.trim() : '';
+      _beep();
+      _toast(`Te escucho… (dijiste «${kw}»)`);
+      _syncUI();
+    },
+    onPartial: (t) => _showPartial(base, t),
+  });
+  _wake = ctl;
+  _syncUI();
+  ctl.done.then((text) => {
+    if (!ctl.woken) return;
+    _showPartial(base, '');
+    if (text) _afterTranscript(text, null);
+    else _toast('No se oyó ninguna orden');
+  }).catch((e) => {
+    if ((e && e.message) !== 'cancelado' && !_wakeErrorShown) { _wakeErrorShown = true; _error('Palabra de activación: ' + (e.message || e)); }
+  }).finally(() => {
+    if (_wake === ctl) _wake = null;
+    if (ctl.woken) { isRecording = false; _resetRecordingUI(); }
+    _syncUI();
+    _resumeWakeSoon(ctl.woken ? 1500 : 3000);
+  });
+}
+
+/** Preferencias de voz (las carga app.js al iniciar y Ajustes al cambiarlas). */
+export function configure(p = {}) {
+  const wasWake = _prefs.wake, oldKw = _prefs.keyword;
+  Object.assign(_prefs, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+  _prefs.silenceMs = Math.max(600, parseInt(_prefs.silenceMs, 10) || 1500);
+  if (!_prefs.wake || (_wake && oldKw !== _prefs.keyword)) _pauseWake();
+  if (_prefs.wake && (!wasWake || !_wake)) { _wakeErrorShown = false; _resumeWakeSoon(300); }
+}
+
+export function getPrefs() { return { ..._prefs }; }
+
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -84,6 +342,7 @@ function formatTime(seconds) {
  */
 function _resetRecordingUI() {
   isRecording = false;
+  if (_vad) { _vad.stop(); _vad = null; }
   if (recordingInterval) {
     clearInterval(recordingInterval);
     recordingInterval = null;
@@ -213,6 +472,12 @@ function insertTranscription(text, showToast) {
  * Start voice recording
  */
 export function startRecording(onFileCreated, showToast, showError) {
+  _cb = { onFileCreated, showToast, showError };
+  if (effectiveProvider() === 'vosk') {
+    _startLocalDictation();
+    return;
+  }
+  _pauseWake();
   // Check for secure context (getUserMedia requires HTTPS or localhost)
   if (!window.isSecureContext) {
     if (showError) showError('Microphone requires HTTPS. Use a reverse proxy with SSL or access via localhost.');
@@ -248,7 +513,7 @@ export function startRecording(onFileCreated, showToast, showError) {
         if (provider === 'browser') {
           const transcript = await stopBrowserSTT();
           if (transcript) {
-            insertTranscription(transcript, showToast);
+            _afterTranscript(transcript, showToast);
           } else {
             if (showToast) showToast('No speech detected');
             const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
@@ -260,7 +525,7 @@ export function startRecording(onFileCreated, showToast, showError) {
           try {
             const transcript = await transcribeOnServer(audioBlob);
             if (transcript) {
-              insertTranscription(transcript, showToast);
+              _afterTranscript(transcript, showToast);
             } else {
               if (showToast) showToast('No speech detected');
             }
@@ -278,9 +543,11 @@ export function startRecording(onFileCreated, showToast, showError) {
         }
 
         _resetRecordingUI();
+        _resumeWakeSoon();
       };
 
       mediaRecorder.start();
+      if (_prefs.autoSend && _sttProvider !== 'disabled') _vad = _watchSilence(stream);
       isRecording = true;
       recordingStartTime = new Date();
 
@@ -312,6 +579,8 @@ export function startRecording(onFileCreated, showToast, showError) {
  * Stop voice recording
  */
 export function stopRecording() {
+  if (_local) { _local.stop(); return; }
+  if (_wake && !_wake.browser && _wake.mode === 'dictate') { _wake.stop(); return; }
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop();
     // isRecording will be set to false in _resetRecordingUI called from onstop
@@ -356,8 +625,13 @@ const voiceRecorderModule = {
   getIsRecording,
   init,
   refreshSttProvider,
+  configure,
+  getPrefs,
+  getWakeState,
+  effectiveProvider,
   get _sttProvider() { return _sttProvider; },
   set _sttProvider(v) { _sttProvider = v; },
 };
 
+window.ruffsVoice = voiceRecorderModule;
 export default voiceRecorderModule;
