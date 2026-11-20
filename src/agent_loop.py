@@ -1823,6 +1823,10 @@ async def stream_agent_loop(
             prompt_type=prompt_type if round_num == 1 else None,
             tools=all_tool_schemas if all_tool_schemas else None,
             timeout=agent_stream_timeout,
+            # RUFFS: tras una ronda vacía (el modelo «pensó» y terminó sin
+            # escribir ni usar herramientas) se reintenta sin pensamiento, así
+            # tiene que actuar o responder. Solo lo aplica OpenRouter.
+            **({"reasoning": {"enabled": False}} if _empty_rounds >= 1 else {}),
         ):
             if time.time() > _round_deadline:
                 logger.warning(f"[agent] round {round_num} stream exceeded wall-clock deadline; cutting off")
@@ -2068,6 +2072,7 @@ async def stream_agent_loop(
 
         if tool_blocks:
             _trunc_rounds = 0  # tool progress resets the truncation streak
+            _empty_rounds = 0  # RUFFS: volvió a actuar → la siguiente ronda piensa normal
 
         if not tool_blocks:
             # ── Completion verifier (mechanism 3a) ────────────────────
@@ -2123,7 +2128,9 @@ async def stream_agent_loop(
                 logger.warning(
                     f"[agent] round {round_num} produced NO visible text "
                     f"(finish_reason={_round_finish!r}, reasoning={len(round_reasoning)} "
-                    f"chars, attempt {_empty_rounds}/{_EMPTY_ROUND_MAX})"
+                    f"chars, attempt {_empty_rounds}/{_EMPTY_ROUND_MAX}); "
+                    f"next attempt without reasoning. Thought: "
+                    f"{round_reasoning.strip()[:200]!r}"
                 )
                 if _empty_rounds >= _EMPTY_ROUND_MAX:
                     _stop_tag = (" (" + _round_finish + ")") if _round_finish else ""

@@ -204,8 +204,11 @@ export function listen(opts = {}) {
   (async () => {
     try {
       sid = await openSession();
+      // Sin cancelación de eco ni ganancia automática: con esos filtros Windows
+      // trata el micrófono como una llamada y BAJA un 80 % (o silencia) los
+      // demás sonidos mientras está abierto — la voz de RUFFS no se oía.
       stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
       });
       const AC = window.AudioContext || window.webkitAudioContext;
       try { ctx = new AC({ sampleRate: 16000 }); } catch (_) { ctx = new AC(); }

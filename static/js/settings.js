@@ -855,6 +855,11 @@ async function initTtsSettings() {
     if (isEndpoint() || prov === 'edge_tts' || prov === 'elevenlabs') {
       modelSelect.style.display = ''; modelInput.style.display = 'none';
       voiceSelect.style.display = ''; voiceInput.style.display = 'none';
+    } else if (prov === 'browser') {
+      // RUFFS: voces del dispositivo en una lista (antes era texto libre).
+      modelSelect.style.display = 'none'; modelInput.style.display = 'none';
+      voiceSelect.style.display = ''; voiceInput.style.display = 'none';
+      loadBrowserVoices();
     } else {
       modelSelect.style.display = 'none'; modelInput.style.display = '';
       voiceSelect.style.display = 'none'; voiceInput.style.display = prov === 'disabled' ? 'none' : '';
@@ -907,7 +912,7 @@ async function initTtsSettings() {
   async function saveTTS() {
     try {
       await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true, tts_provider: provSel.value, tts_model: getModel() || 'tts-1', tts_voice: getVoice() || (provSel.value === 'edge_tts' ? 'es-CL-CatalinaNeural' : 'alloy'), tts_speed: speedSelect.value || '1', tts_auto_play: autoPlayToggle ? autoPlayToggle.checked : false, tts_auto_play_mode: autoPlayMode ? autoPlayMode.value : 'smart', tts_wake_word_enabled: wakeWordToggle ? wakeWordToggle.checked : false, tts_wake_word: wakeWordInput ? wakeWordInput.value : 'RUFFS' }) });
+        body: JSON.stringify({ tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true, tts_provider: provSel.value, tts_model: getModel() || 'tts-1', tts_voice: getVoice() || (provSel.value === 'edge_tts' ? 'es-CL-CatalinaNeural' : (provSel.value === 'browser' ? '' : 'alloy')), tts_speed: speedSelect.value || '1', tts_auto_play: autoPlayToggle ? autoPlayToggle.checked : false, tts_auto_play_mode: autoPlayMode ? autoPlayMode.value : 'smart', tts_wake_word_enabled: wakeWordToggle ? wakeWordToggle.checked : false, tts_wake_word: wakeWordInput ? wakeWordInput.value : 'RUFFS' }) });
       ttsMsg.textContent = 'Saved'; ttsMsg.style.color = 'var(--fg)'; setTimeout(() => { ttsMsg.textContent = ''; }, 2000);
       if (window.aiTTSManager) window.aiTTSManager.checkAvailability();
     } catch (e) { ttsMsg.textContent = 'Failed to save'; ttsMsg.style.color = 'var(--red)'; }
@@ -919,6 +924,68 @@ async function initTtsSettings() {
   }
 
   // Load Edge TTS voices from the backend
+  // RUFFS: todas las voces instaladas en este equipo (Web Speech API),
+  // agrupadas por idioma y con el idioma del usuario primero.
+  var _browserVoicesWaiting = false;
+  function loadBrowserVoices() {
+    if (!('speechSynthesis' in window)) {
+      voiceSelect.innerHTML = '<option value="">Voz del dispositivo</option>';
+      return;
+    }
+    var fill = function() {
+      var voices = (window.speechSynthesis.getVoices() || []).slice();
+      if (!voices.length) return false;
+      var saved = (typeof settings !== 'undefined' && settings && settings.tts_voice) || '';
+      if (voiceSelect.dataset.browserFilled === '1' && voiceSelect.value) saved = voiceSelect.value;
+      var uiLang = ((navigator.language || 'es') + '').slice(0, 2).toLowerCase();
+      var names = null;
+      try { names = new Intl.DisplayNames([uiLang, 'es'], { type: 'language' }); } catch (_) {}
+      var langName = function(code) {
+        var base = (code || '').split(/[-_]/)[0];
+        try { return names ? names.of(base) : base; } catch (_) { return base || '?'; }
+      };
+      var groups = {};
+      voices.forEach(function(v) {
+        var base = (v.lang || '').split(/[-_]/)[0].toLowerCase() || '?';
+        (groups[base] = groups[base] || []).push(v);
+      });
+      var order = Object.keys(groups).sort(function(a, b) {
+        if (a === uiLang) return -1;
+        if (b === uiLang) return 1;
+        return langName(a).localeCompare(langName(b));
+      });
+      voiceSelect.innerHTML = '';
+      var def = document.createElement('option');
+      def.value = ''; def.textContent = 'Predeterminada del sistema';
+      voiceSelect.appendChild(def);
+      order.forEach(function(base) {
+        var og = document.createElement('optgroup');
+        var label = langName(base);
+        og.label = label.charAt(0).toUpperCase() + label.slice(1) + ' (' + groups[base].length + ')';
+        groups[base].sort(function(a, b) { return a.name.localeCompare(b.name); }).forEach(function(v) {
+          var o = document.createElement('option');
+          o.value = v.name;
+          o.textContent = v.name.replace(/^Microsoft\s+/, '').replace(/\s+-\s+.*$/, '')
+            + ' — ' + v.lang + (v.localService ? '' : ' · en línea') + (v.default ? ' · predeterminada' : '');
+          og.appendChild(o);
+        });
+        voiceSelect.appendChild(og);
+      });
+      var match = voices.find(function(v) { return v.name === saved; })
+        || voices.find(function(v) { return saved && v.name.toLowerCase().indexOf(String(saved).toLowerCase()) !== -1; });
+      voiceSelect.value = match ? match.name : '';
+      voiceSelect.dataset.browserFilled = '1';
+      return true;
+    };
+    if (!fill() && !_browserVoicesWaiting) {
+      // En Chrome/WebView2 la lista llega un momento después.
+      _browserVoicesWaiting = true;
+      var done = function() { _browserVoicesWaiting = false; fill(); };
+      window.speechSynthesis.addEventListener('voiceschanged', done, { once: true });
+      setTimeout(function() { if (_browserVoicesWaiting) done(); }, 2000);
+    }
+  }
+
   async function loadEdgeTtsVoices() {
     try {
       var res = await fetch('/api/tts/voices?provider=edge_tts', { credentials: 'same-origin' });
@@ -953,6 +1020,7 @@ async function initTtsSettings() {
   modelSelect.addEventListener('change', saveAndClearCache);
   modelInput.addEventListener('change', saveTTS);
   voiceSelect.addEventListener('change', function() {
+    if (provSel.value === 'browser' && window.aiTTSManager) window.aiTTSManager.browserVoice = voiceSelect.value || '';
     voiceInput.value = voiceSelect.value;
     saveAndClearCache();
   });
@@ -1015,6 +1083,14 @@ async function initTtsSettings() {
         setTimeout(function() { ttsMsg.textContent = ''; }, 2000); return;
       }
       var testText = 'Hello, this is a test of text to speech.';
+      // RUFFS: la prueba en el idioma de la voz elegida
+      try {
+        var _pv = prov === 'browser' && window.speechSynthesis
+          ? window.speechSynthesis.getVoices().find(function(v) { return v.name === getVoice(); }) : null;
+        var _pl = ((_pv && _pv.lang) || (prov === 'browser' && !getVoice() ? navigator.language : '') || '').slice(0, 2).toLowerCase();
+        if (_pl === 'es') testText = 'Hola, soy RUFFS. Así suena esta voz.';
+        else if (_pl === 'pt') testText = 'Olá, eu sou o RUFFS. É assim que esta voz soa.';
+      } catch (_) {}
       previewPlaying = true; previewBtn.textContent = 'Loading...';
       try {
         if (prov === 'browser') {

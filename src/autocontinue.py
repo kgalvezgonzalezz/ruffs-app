@@ -211,8 +211,9 @@ async def stream_with_autocontinue(
 
     if continuations:
         yield f'data: {json.dumps({"type": "continued", "count": continuations})}\n\n'
-    # RUFFS: si el envoltorio se rinde por longitud, reenvia el motivo para que
-    # el consumidor no confunda una respuesta cortada con una respuesta completa.
-    if emit_finish and finish == "length":
-        yield f'data: {json.dumps({"type": "finish", "reason": "length"})}\n\n'
+    # RUFFS: reenvía el motivo real de parada (stop, tool_calls, length…) para
+    # que el agente distinga una respuesta cortada, una que terminó sin texto
+    # y una normal (antes solo llegaba «length» y el registro decía '').
+    if emit_finish and finish:
+        yield f'data: {json.dumps({"type": "finish", "reason": finish})}\n\n'
     yield "data: [DONE]\n\n"

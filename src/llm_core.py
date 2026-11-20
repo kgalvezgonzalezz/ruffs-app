@@ -1227,8 +1227,11 @@ async def llm_call_async(
 async def stream_llm(url: str, model: str, messages: List[Dict], temperature: float = LLMConfig.DEFAULT_TEMPERATURE,
                      max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None,
                      timeout: int = LLMConfig.STREAM_TIMEOUT, prompt_type: Optional[str] = None,
-                     tools: Optional[List[Dict]] = None):
+                     tools: Optional[List[Dict]] = None, reasoning: Optional[Dict] = None):
     """Stream LLM responses with improved error handling.
+
+    RUFFS: ``reasoning`` (solo OpenRouter) se pasa tal cual a la petición, p. ej.
+    ``{"enabled": False}`` para pedir una respuesta sin «pensamiento».
 
     Yields SSE chunks:
       - data: {"delta": "text"}           — text content
@@ -1285,6 +1288,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
             payload["tools"] = tools
         if provider == "openrouter":
             await _apply_openrouter_options(payload, model, max_tokens)
+            if reasoning:
+                payload["reasoning"] = reasoning
         h = _provider_headers(provider, headers)
         if provider == "copilot":
             from src.copilot import apply_request_headers

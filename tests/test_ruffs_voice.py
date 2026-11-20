@@ -182,3 +182,15 @@ def test_tidy_keeps_folder_view_and_save_as_enabled():
     assert "sessionModule.setSortMode(null); // clear sort — tidy creates manual folder order" not in app
     desk = _read("ruffs_desktop.py")
     assert "webview.settings['ALLOW_DOWNLOADS'] = True" in desk
+
+
+def test_mic_does_not_duck_ruffs_voice():
+    """Con cancelación de eco Windows trata el micrófono como una llamada y baja
+    un 80 % los demás sonidos: la voz de RUFFS no se oía con la palabra de
+    activación encendida. Además, mientras RUFFS habla, se suelta el micrófono."""
+    loc = _read("static/js/voiceLocal.js")
+    assert "echoCancellation: false, noiseSuppression: false, autoGainControl: false" in loc
+    assert "echoCancellation: true" not in loc
+    rec = _read("static/js/voiceRecorder.js")
+    assert "function _watchRuffsSpeech()" in rec and "_pausedForSpeech = true;" in rec
+    assert "if (_ruffsIsSpeaking()) { _pausedForSpeech = true; return; }" in rec

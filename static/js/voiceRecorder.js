@@ -46,6 +46,25 @@ function _ruffsIsSpeaking() {
     || (window.speechSynthesis && window.speechSynthesis.speaking));
 }
 
+// Mientras RUFFS habla, la palabra de activación suelta el micrófono (no se
+// oye a sí misma y Windows no baja el volumen de la voz) y vuelve al terminar.
+let _speechWatch = null;
+let _pausedForSpeech = false;
+function _watchRuffsSpeech() {
+  if (_speechWatch) return;
+  _speechWatch = setInterval(() => {
+    if (!_prefs.wake) { clearInterval(_speechWatch); _speechWatch = null; _pausedForSpeech = false; return; }
+    const speaking = _ruffsIsSpeaking();
+    if (speaking && _wake && !_wake.woken && _wake.mode !== 'dictate') {
+      _pausedForSpeech = true;
+      _pauseWake();
+    } else if (!speaking && _pausedForSpeech && !_wake && !_local && !isRecording) {
+      _pausedForSpeech = false;
+      _resumeWakeSoon(700);
+    }
+  }, 300);
+}
+
 function _beep() {
   try {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -194,6 +213,8 @@ function _resumeWakeSoon(ms = 900) {
 
 async function _startWake() {
   if (_wake || _local || isRecording || !_prefs.wake || _sttProvider === 'disabled') return;
+  _watchRuffsSpeech();
+  if (_ruffsIsSpeaking()) { _pausedForSpeech = true; return; }   // vuelve al terminar de hablar
   const kw = (_prefs.keyword || 'RUFFS').trim() || 'RUFFS';
   if (effectiveProvider() !== 'vosk' && window.wakeWordDetector && _browserSttWorks()) {
     // Chrome/Edge normales: detector del navegador.
