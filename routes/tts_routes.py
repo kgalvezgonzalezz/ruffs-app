@@ -4,7 +4,7 @@ TTS API routes — multi-provider (local Kokoro, API endpoint, browser).
 """
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 import logging
@@ -22,6 +22,23 @@ def setup_tts_routes(tts_service):
     """Setup TTS routes with the provided TTS service"""
     router = APIRouter(prefix="/api/tts", tags=["tts"])
 
+    @router.post("/spoken")
+    async def spoken_text(request: Request):
+        """RUFFS: texto para LEER en voz alta una respuesta (resumen hablado si
+        trae tablas/código/listas o es larga). Solo para el audio: no se guarda
+        en el chat ni se muestra."""
+        from src.auth_helpers import require_user
+        from src.spoken_summary import spoken_version
+        owner = require_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        mode = body.get("mode") or "smart"
+        if mode not in ("smart", "summary", "full"):
+            mode = "smart"
+        return await spoken_version(str(body.get("text") or ""), mode=mode, owner=owner or None)
+
     @router.get("/stats")
     async def get_tts_stats():
         """Get TTS service statistics"""
@@ -32,6 +49,7 @@ def setup_tts_routes(tts_service):
                 from src.settings import load_settings
                 settings = load_settings()
                 stats["auto_play"] = settings.get("tts_auto_play", False)
+                stats["auto_play_mode"] = settings.get("tts_auto_play_mode", "smart")
                 stats["wake_word"] = settings.get("tts_wake_word", "RUFFS")
                 stats["wake_word_enabled"] = settings.get("tts_wake_word_enabled", False)
             except Exception:

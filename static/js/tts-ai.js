@@ -47,6 +47,7 @@ class AITTSManager {
             this.playbackSpeed = stats.speed || 1;
             this._provider = stats.provider || 'disabled';
             this.autoPlay = stats.auto_play === true;
+            this.autoPlayMode = stats.auto_play_mode || 'smart';
             this.wakeWordEnabled = stats.wake_word_enabled === true;
             this.wakeWord = stats.wake_word || 'RUFFS';
 
@@ -253,6 +254,29 @@ class AITTSManager {
      * Enqueue a message for auto-play. Plays sequentially — each message
      * finishes before the next starts. Stopping any message clears the queue.
      */
+    // RUFFS: lectura automática de la respuesta FINAL (no lo que RUFFS va
+    // escribiendo mientras trabaja). Si trae tablas, código, listas o es larga,
+    // el servidor prepara un resumen para escuchar; ese texto solo se oye: el
+    // chat sigue mostrando la respuesta normal.
+    async speakFinal(text, button, resetFn) {
+        var mode = this.autoPlayMode || 'smart';
+        var speech = text;
+        try {
+            if (button) { button.classList.add('loading'); button.title = 'Preparando la lectura…'; }
+            var r = await fetch('/api/tts/spoken', {
+                method: 'POST', credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text, mode: mode }),
+            });
+            if (r.ok) {
+                var j = await r.json();
+                if (j && typeof j.speech === 'string' && j.speech.trim()) speech = j.speech;
+            }
+        } catch (e) { /* sin servidor: se lee la respuesta tal cual */ }
+        if (!this.autoPlay) { if (button) button.classList.remove('loading'); return; }
+        this.enqueue(speech, button, resetFn);
+    }
+
     enqueue(text, button, resetFn) {
         this._queue.push({ text, button, resetFn });
         if (!this._processing) {

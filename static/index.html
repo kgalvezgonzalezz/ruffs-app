@@ -1600,9 +1600,21 @@
               <div id="set-ttsAutoPlayRow" style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid color-mix(in srgb, var(--fg) 10%, transparent);">
                 <div>
                   <div style="font-weight:500;font-size:13px;">Auto-play responses</div>
-                  <div style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);">Speak responses automatically without clicking (JARVIS mode)</div>
+                  <div style="font-size:11px;color:color-mix(in srgb, var(--fg) 45%, transparent);">Lee en voz alta la respuesta final al terminar, no mientras RUFFS trabaja (modo JARVIS)</div>
                 </div>
                 <label class="admin-switch"><input type="checkbox" id="set-ttsAutoPlayToggle"><span class="admin-slider"></span></label>
+              </div>
+              <!-- RUFFS: qué se lee -->
+              <div id="set-ttsAutoPlayModeRow" style="display:none;margin-top:8px;">
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                  <label class="settings-label">Qué leer</label>
+                  <select id="set-ttsAutoPlayMode" class="settings-select">
+                    <option value="smart">Resumen hablado cuando haga falta (recomendado)</option>
+                    <option value="summary">Siempre un resumen hablado</option>
+                    <option value="full">La respuesta completa</option>
+                  </select>
+                </div>
+                <div style="font-size:11px;margin-top:4px;color:color-mix(in srgb, var(--fg) 45%, transparent);">Si la respuesta trae tablas, código, listas o es larga, RUFFS te dice un resumen breve y natural. El resumen solo se escucha: en el chat ves la respuesta normal.</div>
               </div>
               <!-- Wake-word toggle -->
               <div id="set-ttsWakeWordRow" style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid color-mix(in srgb, var(--fg) 10%, transparent);">

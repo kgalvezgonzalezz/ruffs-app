@@ -1025,7 +1025,10 @@ import createResearchSynapse from './researchSynapse.js';
       let isThinking = false;
       let thinkingStartTime = null;
       // Streaming TTS: synthesize sentence-by-sentence during streaming
-      const streamingTTS = !!(window.aiTTSManager && window.aiTTSManager.autoPlay && window.aiTTSManager.available);
+      // RUFFS: la lectura automática ya no habla mientras RUFFS trabaja (cada
+      // ronda del agente se superponía); lee solo la respuesta final al terminar
+      // (ver speakFinal más abajo).
+      const streamingTTS = false;
       if (streamingTTS) window.aiTTSManager.streamingStart();
       // Multi-bubble agent tracking
       let roundHolder = holder;       // Current AI text bubble (changes per round)
@@ -2556,7 +2559,9 @@ import createResearchSynapse from './researchSynapse.js';
         }
         // TTS auto-play: streaming mode flushes remaining text, non-streaming enqueues full message
         if (accumulated && window.aiTTSManager && window.aiTTSManager.autoPlay) {
-          const ttsBtn = holder.querySelector('.ai-tts-button');
+          // RUFFS: en modo agente el botón de leer va en la última burbuja
+          // (footerTarget), no en la primera: antes no se leía nada.
+          const ttsBtn = footerTarget.querySelector('.ai-tts-button') || holder.querySelector('.ai-tts-button');
           if (ttsBtn) {
             var ICON_PLAY_TTS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
             var ICON_STOP_TTS = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>';
@@ -2578,8 +2583,10 @@ import createResearchSynapse from './researchSynapse.js';
                 ttsBtn.title = 'Stop';
               }
             } else {
-              // Non-streaming fallback (autoPlay toggled mid-stream, etc.)
-              window.aiTTSManager.enqueue(accumulated, ttsBtn, resetFn);
+              // Solo la respuesta final: en modo agente, la última ronda (sin las
+              // notas intermedias «voy a buscar…»); si viene vacía, todo el texto.
+              const _finalText = (typeof roundText === 'string' && roundText.trim()) ? roundText : accumulated;
+              window.aiTTSManager.speakFinal(_finalText, ttsBtn, resetFn);
             }
           }
         }

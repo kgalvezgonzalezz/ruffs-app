@@ -51,6 +51,11 @@ DEFAULT_SETTINGS = {
     "tts_voice": "alloy",
     "tts_speed": "1",
     "tts_auto_play": False,
+    # RUFFS: qué lee la lectura automática al terminar la respuesta:
+    # "smart" = la respuesta si suena natural, si no un resumen hablado;
+    # "summary" = siempre un resumen; "full" = la respuesta completa.
+    # (El resumen solo se escucha: el chat muestra la respuesta normal.)
+    "tts_auto_play_mode": "smart",
     "tts_wake_word": "RUFFS",
     "tts_wake_word_enabled": False,
     # Dictado gratuito por defecto ("browser": reconocimiento de voz del

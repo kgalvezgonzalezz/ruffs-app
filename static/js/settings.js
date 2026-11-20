@@ -823,6 +823,11 @@ async function initTtsSettings() {
   var ttsEnabledToggle = el('set-ttsEnabledToggle');
   var ttsConfigWrap = provSel ? provSel.closest('div[style*="flex-direction"]') : null;
   var autoPlayToggle = el('set-ttsAutoPlayToggle');
+  var autoPlayMode = el('set-ttsAutoPlayMode');
+  var autoPlayModeRow = el('set-ttsAutoPlayModeRow');
+  function syncAutoPlayModeRow() {
+    if (autoPlayModeRow && autoPlayToggle) autoPlayModeRow.style.display = autoPlayToggle.checked ? '' : 'none';
+  }
   var wakeWordToggle = el('set-ttsWakeWordToggle');
   var wakeWordInput = el('set-ttsWakeWordKeyword');
   var wakeWordRow = el('set-ttsWakeWordRow');
@@ -878,6 +883,8 @@ async function initTtsSettings() {
     if (ttsEnabledToggle) ttsEnabledToggle.checked = settings.tts_enabled !== false;
     // Load auto-play and wake-word settings
     if (autoPlayToggle) autoPlayToggle.checked = settings.tts_auto_play === true;
+    if (autoPlayMode) autoPlayMode.value = settings.tts_auto_play_mode || 'smart';
+    syncAutoPlayModeRow();
     if (wakeWordToggle) wakeWordToggle.checked = settings.tts_wake_word_enabled === true;
     if (wakeWordInput && settings.tts_wake_word) wakeWordInput.value = settings.tts_wake_word;
     // Sync wake-word detector enabled state
@@ -900,7 +907,7 @@ async function initTtsSettings() {
   async function saveTTS() {
     try {
       await fetch('/api/auth/settings', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true, tts_provider: provSel.value, tts_model: getModel() || 'tts-1', tts_voice: getVoice() || (provSel.value === 'edge_tts' ? 'es-CL-CatalinaNeural' : 'alloy'), tts_speed: speedSelect.value || '1', tts_auto_play: autoPlayToggle ? autoPlayToggle.checked : false, tts_wake_word_enabled: wakeWordToggle ? wakeWordToggle.checked : false, tts_wake_word: wakeWordInput ? wakeWordInput.value : 'RUFFS' }) });
+        body: JSON.stringify({ tts_enabled: ttsEnabledToggle ? ttsEnabledToggle.checked : true, tts_provider: provSel.value, tts_model: getModel() || 'tts-1', tts_voice: getVoice() || (provSel.value === 'edge_tts' ? 'es-CL-CatalinaNeural' : 'alloy'), tts_speed: speedSelect.value || '1', tts_auto_play: autoPlayToggle ? autoPlayToggle.checked : false, tts_auto_play_mode: autoPlayMode ? autoPlayMode.value : 'smart', tts_wake_word_enabled: wakeWordToggle ? wakeWordToggle.checked : false, tts_wake_word: wakeWordInput ? wakeWordInput.value : 'RUFFS' }) });
       ttsMsg.textContent = 'Saved'; ttsMsg.style.color = 'var(--fg)'; setTimeout(() => { ttsMsg.textContent = ''; }, 2000);
       if (window.aiTTSManager) window.aiTTSManager.checkAvailability();
     } catch (e) { ttsMsg.textContent = 'Failed to save'; ttsMsg.style.color = 'var(--red)'; }
@@ -957,6 +964,13 @@ async function initTtsSettings() {
   if (autoPlayToggle) {
     autoPlayToggle.addEventListener('change', function() {
       if (window.aiTTSManager) window.aiTTSManager.autoPlay = autoPlayToggle.checked;
+      syncAutoPlayModeRow();
+      saveTTS();
+    });
+  }
+  if (autoPlayMode) {
+    autoPlayMode.addEventListener('change', function() {
+      if (window.aiTTSManager) window.aiTTSManager.autoPlayMode = autoPlayMode.value;
       saveTTS();
     });
   }
