@@ -40,3 +40,17 @@ def test_stream_llm_sends_reasoning_only_to_openrouter_and_agent_retries_without
     assert '**({"reasoning": {"enabled": False}} if _empty_rounds >= 1 else {}),' in agent
     assert "_empty_rounds = 0  # RUFFS: volvió a actuar" in agent
     assert "next attempt without reasoning. Thought:" in agent
+
+
+def test_announce_without_acting_is_not_a_final_answer():
+    """«Voy a buscar en GitHub…» sin llamar herramientas cerraba el turno."""
+    import src.agent_tools  # noqa: F401
+    from src.agent_loop import _looks_like_announcement as f
+    assert f("Voy a buscar en GitHub varios repos relacionados.")
+    assert f("Déjame revisar eso un momento.") and f("Let me search GitHub for that.")
+    assert not f("Encontré 3 repos:\n- a\n- b")
+    assert not f("¿Quieres que busque también en GitLab?")
+    assert not f("Hecho: volví al micrófono predeterminado.")
+    assert not f("Listo. Marzo fue el mejor mes; si quieres, después haré un gráfico con los datos del trimestre.")
+    agent = (ROOT / "src/agent_loop.py").read_text(encoding="utf-8")
+    assert "_announce_nudges < _ANNOUNCE_MAX" in agent and "Do not announce again." in agent

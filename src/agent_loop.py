@@ -560,6 +560,27 @@ _ADMIN_KEYWORDS = [
     "note", "notes", "todo", "todos", "reminder", "reminders",
 ]
 
+# RUFFS: «anunció pero no actuó». Algunos modelos (DeepSeek) responden solo
+# «Voy a buscar en GitHub…» SIN llamar ninguna herramienta; como una ronda con
+# texto y sin herramientas es la respuesta final, el turno se cerraba ahí y el
+# usuario veía a RUFFS «pegado» tras prometer buscar.
+_ANNOUNCE_RE = re.compile(
+    r"\b(voy a|vamos a|d[eé]jame|ahora (?:voy|busco|reviso|miro)|primero (?:voy|busco|reviso)|procedo a|"
+    r"a continuaci[oó]n|enseguida|en seguida|un momento|dame un momento|buscar[eé]|revisar[eé]|har[eé]|"
+    r"consultar[eé]|comenzar[eé]|empiezo a|estoy buscando|i'?ll|i will|let me|i'?m going to|going to|one moment)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_announcement(text: str) -> bool:
+    """Texto corto que promete hacer algo, sin resultados ni preguntas."""
+    t = (text or "").strip()
+    if not t or len(t) > 260 or t.endswith("?") or "\n-" in t or "\n1." in t or "http" in t:
+        return False
+    first = re.split(r"(?<=[.!?…:])\s", t, maxsplit=1)[0]   # la intención va en la 1.ª frase («Voy a…»)
+    return bool(_ANNOUNCE_RE.search(first))
+
+
 def _detect_admin_intent(messages: List[Dict]) -> bool:
     """Check if the last user message suggests admin/management tool usage."""
     for msg in reversed(messages):
@@ -1744,6 +1765,8 @@ async def stream_agent_loop(
 
     # -- RUFFS: empty-round recovery state (must live OUTSIDE the loop) --
     _empty_rounds = 0      # consecutive rounds with no visible text
+    _announce_nudges = 0   # RUFFS: rondas que solo anunciaron una acción
+    _ANNOUNCE_MAX = 2
     _EMPTY_ROUND_MAX = 3   # retries before giving up honestly
     _TRUNC_ROUND_MAX = 3   # continuation attempts when provider cuts at max_tokens
     _LENGTH_STOPS = ('length', 'max_tokens', 'max_output_tokens', 'model_length')
@@ -2178,6 +2201,26 @@ async def stream_agent_loop(
                 yield f'data: {json.dumps({"delta": _note_t})}\n\n'
                 full_response += _note_t
                 break
+            # -- RUFFS: anunció pero no actuó ---------------------------------
+            if (all_tool_schemas and _announce_nudges < _ANNOUNCE_MAX
+                    and _looks_like_announcement(_visible)):
+                _announce_nudges += 1
+                logger.warning(
+                    f"[agent] round {round_num} only announced an action without calling a tool "
+                    f"({_visible[:90]!r}); asking it to act (attempt {_announce_nudges}/{_ANNOUNCE_MAX})"
+                )
+                messages.append({"role": "assistant", "content": cleaned_round})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You said what you were going to do but did not call any tool, so nothing happened. "
+                        "Do it now: call the appropriate tool (for example web_search or web_fetch to search "
+                        "the web or GitHub) and then give the final answer with the results. Do not announce again."
+                    ),
+                })
+                yield f'data: {json.dumps({"delta": chr(10) + chr(10)})}\n\n'
+                full_response += chr(10) + chr(10)
+                continue
             _trunc_rounds = 0
             _empty_rounds = 0
             break  # no tools — done

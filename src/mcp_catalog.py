@@ -101,6 +101,17 @@ def catalog() -> list[dict]:
             "package": "computer_use_server.py",
         },
         {
+            # RUFFS: buscar empleo y postular con CV ajustado (Computrabajo,
+            # GetOnBoard, LinkedIn, Indeed). Para postular directo en
+            # Computrabajo, añade CT_COOKIES (tu sesión) en el env del servidor.
+            "key": "empleos",
+            "name": "Empleos (buscar ofertas y postular con CV ajustado)",
+            "command": "{ruffs_python}",
+            "args": ["{ruffs_dir}/mcp_servers/empleos_server.py"],
+            "env": {"PYTHONIOENCODING": "utf-8"},
+            "package": "empleos_server.py",
+        },
+        {
             "key": "rea",
             "name": "REA (ingeniería inversa de apps, binarios y webs)",
             "command": "npx",

@@ -512,6 +512,11 @@ _SERVER_ALIASES = {
     "rea": ("rea", "reverse engineering"),
     "agent_desktop": ("agent desktop", "agent-desktop"),
     "hyperframes": ("hyperframes", "heygen"),
+    # RUFFS: buscar empleo y postular (mcp_servers/empleos_server.py)
+    "empleos": ("empleo", "empleos", "postular", "postula", "postúlame", "postulación", "postulaciones",
+                "oferta laboral", "ofertas laborales", "ofertas de trabajo", "oferta de trabajo", "buscar trabajo",
+                "busca trabajo", "vacante", "vacantes", "currículum", "curriculum", "computrabajo", "getonboard",
+                "get on board", "indeed", "linkedin jobs", "candidatura", "candidaturas"),
 }
 # Alias tan inequívocos que basta verlos en el prompt de sistema (p. ej. la
 # persona «Computer Ruffs») para incluir el servidor.

@@ -1224,7 +1224,7 @@ import createResearchSynapse from './researchSynapse.js';
           // Don't show beforeThink text during streaming — it'll appear in the final render
           // This prevents the "split into two" duplication
           contentEl.innerHTML =
-            '<div class="thinking-section"><div class="thinking-header"><div class="thinking-header-left">Thinking' +
+            '<div class="thinking-section live-think-active"><div class="thinking-header"><div class="thinking-header-left">Thinking' +
             (lines > 1 ? ` (${lines} lines)` : '') + '</div></div></div>';
           contentEl._prevTextLen = 0;
           uiModule.scrollHistory();
@@ -1368,6 +1368,7 @@ import createResearchSynapse from './researchSynapse.js';
                   roundText = roundText.replace(/<think>/i, '<think time="' + _elapsedDone + '">');
                 }
                 if (_liveThinkHeader) _liveThinkHeader.textContent = 'View thinking process';
+                if (_liveThinkSection) _liveThinkSection.classList.remove('live-think-active');
                 if (_liveThinkSpinnerSlot) _liveThinkSpinnerSlot.remove();
                 if (_liveThinkTimerEl && _elapsedDone) {
                   _liveThinkTimerEl.textContent = _elapsedDone + 's';
@@ -1543,7 +1544,7 @@ import createResearchSynapse from './researchSynapse.js';
                   thinkContent.style.minHeight = '';
                   _liveThinkDomId = 'live-think-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
                   thinkContent.innerHTML = `
-                    <div class="thinking-section">
+                    <div class="thinking-section live-think-active">
                       <div class="thinking-header" data-thinking-id="${_liveThinkDomId}">
                         <div class="thinking-header-left"><span class="live-think-header-text">Thinking\u2026</span></div>
                         <span class="live-think-spinner-slot" style="flex-shrink:0;margin-left:auto;"></span>
@@ -1629,6 +1630,7 @@ import createResearchSynapse from './researchSynapse.js';
                     roundText = roundText.replace(/<think>/i, '<think time="' + elapsed + '">');
                   }
                   if (_liveThinkHeader) _liveThinkHeader.textContent = 'View thinking process';
+                  if (_liveThinkSection) _liveThinkSection.classList.remove('live-think-active');
                   if (_liveThinkSpinnerSlot) _liveThinkSpinnerSlot.remove();
                   // Move timer to right side of header
                   if (_liveThinkTimerEl && elapsed) {
@@ -1964,6 +1966,7 @@ import createResearchSynapse from './researchSynapse.js';
                   cancelAnimationFrame(_thinkTimerRAF);
                   var _elapsed2 = thinkingStartTime ? ((Date.now() - thinkingStartTime) / 1000).toFixed(1) : null;
                   if (_liveThinkHeader) _liveThinkHeader.textContent = 'View thinking process';
+                  if (_liveThinkSection) _liveThinkSection.classList.remove('live-think-active');
                   if (_liveThinkTimerEl) _liveThinkTimerEl.textContent = _elapsed2 ? _elapsed2 + 's' : '';
                   if (_liveThinkSpinnerSlot) _liveThinkSpinnerSlot.remove();
                   // Assign stable IDs

@@ -16,6 +16,9 @@ python-docx>=1.1
 # RUFFS: voz local sin internet (dictado y palabra de activación), Apache-2.0.
 # 0.3.45 no trae rueda para Mac: allí se instala 0.3.44 (universal2).
 vosk>=0.3.44
+# RUFFS: MCP de empleos — búsqueda en LinkedIn/Indeed (MIT) y CV en PDF (LGPL-3.0)
+python-jobspy>=1.1
+fpdf2>=2.7
 beautifulsoup4
 charset-normalizer
 numpy

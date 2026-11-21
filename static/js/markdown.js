@@ -397,7 +397,7 @@ export function createCollapsible(contentMarkdown, label = 'details') {
   const id = `collapse-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const safeLabel = escapeHtml(label);
   return `
-    <div class="thinking-section">
+    <div class="thinking-section ruffs-collapsible">
       <div class="thinking-header" data-thinking-id="${id}">
         <div class="thinking-header-left"><span data-label="${safeLabel}">View ${safeLabel}</span></div>
         <div style="display:flex;align-items:center;gap:6px;"><span class="thinking-toggle" id="${id}-toggle"></span></div>

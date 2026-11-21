@@ -378,3 +378,42 @@ def test_callback_is_auth_exempt_and_routes_registered():
     paths = {r.path for r in setup_google_routes().routes}
     assert {"/api/google/status", "/api/google/connect", "/api/google/oauth/callback", "/api/google/open",
             "/api/google/disconnect", "/api/google/client", "/api/google/exchange", "/api/google/sync"} <= paths
+
+
+def test_same_uid_in_two_google_calendars(env, monkeypatch):
+    """Google repite el UID de un festivo en dos calendarios: antes fallaba con
+    UNIQUE constraint (calendar_events.uid) y ese calendario no se sincronizaba."""
+    from core.database import CalendarEvent
+    from routes.prefs_routes import _save_for_user
+    from src import caldav_sync, caldav_writeback
+    tmp, Session = env
+    day = (datetime.utcnow() + timedelta(days=5)).strftime("%Y%m%d")
+    hol = ("BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:20270527_corpus@google.com\nSUMMARY:Corpus Christi\n"
+           f"DTSTART;VALUE=DATE:{day}\nEND:VEVENT\nEND:VCALENDAR\n")
+    a = FakeCal(go.caldav_url("es.chile#holiday@group.v.calendar.google.com"), None, [("20270527_corpus@google.com", hol)])
+    b = FakeCal(go.caldav_url("usuario@gmail.com"), None, [("20270527_corpus@google.com", hol)])
+    cals = (None, [(a, {"name": "Festivos en Chile", "writable": False}), (b, {"name": "Usuario", "writable": True})])
+    monkeypatch.setattr(go, "caldav_calendars", lambda owner: cals)
+    _save_for_user("kevin", {"google_calendar": {"enabled": True}})
+    r1 = asyncio.run(caldav_sync.sync_caldav("kevin"))
+    assert r1["errors"] == [] and r1["events"] == 2
+    r2 = asyncio.run(caldav_sync.sync_caldav("kevin"))       # idempotente
+    assert r2["errors"] == [] and r2["deleted"] == 0
+    s = Session()
+    rows = s.query(CalendarEvent).all()
+    uids = sorted(e.uid for e in rows)
+    assert len(rows) == 2 and uids[0] == "20270527_corpus@google.com" and uids[1].startswith("20270527_corpus@google.com::caldav-")
+    copy = next(e for e in rows if "::" in e.uid)
+    cal_id, local_uid = copy.calendar_id, copy.uid
+    s.close()
+    assert caldav_sync.remote_uid(local_uid) == "20270527_corpus@google.com"
+    # editar la copia en RUFFS actualiza el evento de Google con su UID original
+    target = a if caldav_writeback._stable_cal_id(str(a.url)) == cal_id else b
+    start = datetime.utcnow() + timedelta(days=5)
+    r = asyncio.run(caldav_writeback.writeback_event("kevin", "caldav", cal_id, {
+        "uid": local_uid, "summary": "Corpus Christi (movido)", "dtstart": start, "dtend": start + timedelta(hours=1),
+        "all_day": False, "is_utc": True}))
+    if target is b:
+        assert r.get("updated") and "movido" in b.events["20270527_corpus@google.com"].data
+    else:
+        assert not r["ok"] and "solo lectura" in r["error"]

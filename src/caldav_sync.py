@@ -124,6 +124,38 @@ def _find_existing_event(db, pending, uid_val, calendar_id):
     ).first()
 
 
+UID_SEP = "::"
+
+
+def remote_uid(local_uid: str) -> str:
+    """UID del servidor a partir del UID local («UID::caldav-…» → «UID»)."""
+    u = local_uid or ""
+    i = u.find(UID_SEP + "caldav-")
+    return u[:i] if i > 0 else u
+
+
+def _local_uid(db, pending, uid_val, calendar_id):
+    """UID local para ``uid_val`` en ``calendar_id``.
+
+    calendar_events.uid es clave primaria GLOBAL, pero Google repite el mismo
+    UID en varios calendarios (p. ej. «Festivos en Chile» y otro calendario de
+    festivos): al insertar la segunda copia fallaba con UNIQUE constraint y ese
+    calendario dejaba de sincronizarse entero. Si el UID ya es de otro
+    calendario, esta copia se guarda como «UID::<calendario>»."""
+    from core.database import CalendarEvent
+    ns = f"{uid_val}{UID_SEP}{calendar_id}"
+    if ns in pending:
+        return ns
+    if uid_val in pending:
+        return uid_val
+    rows = db.query(CalendarEvent.uid, CalendarEvent.calendar_id).filter(
+        CalendarEvent.uid.in_([uid_val, ns])).all()
+    for u, c in rows:
+        if c == calendar_id:
+            return u
+    return ns if any(u == uid_val for u, _c in rows) else uid_val
+
+
 def _sync_blocking(owner: str, url: str, username: str, password: str) -> dict:
     """The actual sync — synchronous, intended to run in a threadpool.
     Returns counts: {calendars, events, deleted, errors}."""
@@ -251,6 +283,7 @@ def _pull_into_db(owner: str, calendars, result: dict, label: str = "CalDAV") ->
                         if comp.name != "VEVENT":
                             continue
                         uid_val = str(comp.get("uid", "")) or str(uuid.uuid4())
+                        uid_val = _local_uid(db, pending, uid_val, local_cal.id)
                         seen_uids.add(uid_val)
 
                         dtstart_p = comp.get("dtstart")

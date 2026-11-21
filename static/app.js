@@ -2420,7 +2420,8 @@ function initializeEventListeners() {
 
   // Keys hidden by default on first run (no localStorage yet)
   // RUFFS: 'text-emojis' desactivado por defecto — los emojis se ven como emojis.
-  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis']);
+  // RUFFS: 'show-thinking' también: el proceso de pensamiento va oculto (menos texto por chat).
+  const UI_VIS_DEFAULT_OFF = new Set(['models-section', 'rag-toggle-btn', 'text-emojis', 'show-thinking']);
 
   // Keys that need admin to toggle off (reserved for future use)
   const UI_VIS_ADMIN_ONLY = new Set([]);
@@ -2452,8 +2453,9 @@ function initializeEventListeners() {
     // venía activado y 👋 se mostraba como ":wave:"). Solo se aplica si el
     // usuario lo enciende en Ajustes → Interfaz.
     applyTextEmojis(state['text-emojis'] === true);
-    // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
-    document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
+    // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide).
+    // RUFFS: oculto salvo que el usuario lo active en Ajustes → Interfaz.
+    document.body.classList.toggle('hide-thinking', state['show-thinking'] !== true);
   }
 
   // Rearrange toggles in session/model sort dropdowns

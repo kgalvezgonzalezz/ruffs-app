@@ -171,6 +171,11 @@ async def writeback_event(owner: str, calendar_source: str, calendar_id: str,
     """
     if calendar_source != "caldav":
         return {"skipped": "not a caldav calendar"}
+    # RUFFS: un evento repetido en otro calendario se guarda como «UID::cal»;
+    # en el servidor sigue teniendo su UID original.
+    if isinstance(ev, dict) and ev.get("uid"):
+        from src.caldav_sync import remote_uid
+        ev = dict(ev, uid=remote_uid(ev["uid"]))
     try:
         from routes.prefs_routes import _load_for_user
         from src.secret_storage import decrypt

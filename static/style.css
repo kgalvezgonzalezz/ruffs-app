@@ -8298,7 +8298,12 @@ button.hamburger {
 .katex { font-size: 1.1em; }
 
 /* Hide thinking sections globally via settings toggle */
-body.hide-thinking .thinking-section { display: none !important; }
+/* RUFFS: solo el razonamiento del modelo (otros desplegables, p. ej. la descripción de una
+   imagen, siguen visibles). Mientras piensa queda una barra compacta sin el texto. */
+body.hide-thinking .thinking-section:not(.ruffs-collapsible):not(.live-think-active) { display: none !important; }
+body.hide-thinking .thinking-section.live-think-active .thinking-content,
+body.hide-thinking .thinking-section.live-think-active .thinking-toggle { display: none !important; }
+body.hide-thinking .thinking-section.live-think-active .thinking-header { cursor: default; pointer-events: none; }
 
 /* Thinking process styles — colors follow theme accent */
 .msg .body .stream-content {
