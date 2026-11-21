@@ -625,6 +625,8 @@ body.bg-pattern-aurora {
   border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 .skin-prisma .chat-mic-btn:hover { background: color-mix(in srgb, var(--red) 18%, transparent); }
 .skin-prisma .chat-mic-btn.recording { background: var(--red); border-color: var(--red); color: #fff; }
+.skin-prisma .chat-mic-caret { height: 38px; }
+.skin-prisma .chat-mic-menu { border-color: var(--line-strong); border-radius: 14px; }
 
 /* ── Móvil ── */
 @media (max-width: 768px) {

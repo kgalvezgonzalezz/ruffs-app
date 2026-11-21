@@ -194,3 +194,17 @@ def test_mic_does_not_duck_ruffs_voice():
     rec = _read("static/js/voiceRecorder.js")
     assert "function _watchRuffsSpeech()" in rec and "_pausedForSpeech = true;" in rec
     assert "if (_ruffsIsSpeaking()) { _pausedForSpeech = true; return; }" in rec
+
+
+def test_mic_picker():
+    """Elegir micrófono: botón ▾ y clic derecho/pulsación larga; el dictado y la
+    palabra de activación usan el elegido y, si desaparece, el predeterminado."""
+    loc = _read("static/js/voiceLocal.js")
+    assert "export async function listMics()" in loc and "export async function getMicStream(base)" in loc
+    assert "audio.deviceId = { exact: id }" in loc and "Overconstrained|NotFound|NotReadable" in loc
+    assert "stream = await getMicStream({ echoCancellation: false" in loc
+    assert "voiceLocal.getMicStream()" in _read("static/js/voiceRecorder.js")
+    assert 'id="chat-mic-caret"' in _read("static/index.html")
+    app = _read("static/app.js")
+    assert "micBtn.addEventListener('contextmenu'" in app and "async function _openMicMenu(anchor)" in app
+    assert "if (Date.now() - _micMenuAt < 800) return;" in app       # pulsación larga no graba

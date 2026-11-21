@@ -3547,6 +3547,7 @@ function startOdysseusApp() {
   // ── Botón principal (nuevo chat / enviar / detener) + micrófono aparte ──
   const sendBtn = document.querySelector('.send-btn');
   const micBtn = document.getElementById('chat-mic-btn');
+  const micCaret = document.getElementById('chat-mic-caret');
   const messageInput = el('message');
   const modelPickerWrap = document.getElementById('model-picker-wrap');
 
@@ -3573,6 +3574,7 @@ function startOdysseusApp() {
     const recording = voiceRecorderModule.getIsRecording();
     const wake = voiceRecorderModule.getWakeState ? voiceRecorderModule.getWakeState() : 'off';
     micBtn.style.display = (_isSttEnabled() || recording) ? '' : 'none';
+    if (micCaret) micCaret.style.display = micBtn.style.display;
     micBtn.classList.toggle('recording', recording);
     micBtn.classList.toggle('wake-listening', !recording && wake === 'listening');
     micBtn.setAttribute('aria-pressed', recording ? 'true' : 'false');
@@ -3702,9 +3704,88 @@ function startOdysseusApp() {
     });
   }
 
+  // ── RUFFS: elegir micrófono (botón ▾, clic derecho o pulsación larga) ──
+  let _micMenuAt = 0;
+  function _closeMicMenu() {
+    document.getElementById('chat-mic-menu')?.remove();
+    if (micCaret) micCaret.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', _micMenuOutside, true);
+    document.removeEventListener('keydown', _micMenuKey, true);
+    window.removeEventListener('resize', _closeMicMenu);
+  }
+  function _micMenuOutside(ev) {
+    const m = document.getElementById('chat-mic-menu');
+    if (m && !m.contains(ev.target) && ev.target !== micCaret && !micCaret?.contains(ev.target)) _closeMicMenu();
+  }
+  function _micMenuKey(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); _closeMicMenu(); } }
+  function _placeMicMenu(menu, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const w = Math.min(menu.offsetWidth || 260, window.innerWidth - 16);
+    let left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
+    menu.style.left = left + 'px';
+    // La caja de mensaje está abajo: el menú se abre hacia arriba si cabe.
+    const h = menu.offsetHeight;
+    if (r.top - h - 8 > 8) { menu.style.top = ''; menu.style.bottom = (window.innerHeight - r.top + 6) + 'px'; }
+    else { menu.style.bottom = ''; menu.style.top = Math.min(r.bottom + 6, window.innerHeight - h - 8) + 'px'; }
+  }
+  async function _openMicMenu(anchor) {
+    if (document.getElementById('chat-mic-menu')) { _closeMicMenu(); return; }
+    const vl = window.ruffsVoiceLocal;
+    const menu = document.createElement('div');
+    menu.id = 'chat-mic-menu';
+    menu.className = 'chat-mic-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML = '<div class="chat-mic-menu-title">Micrófono</div><div class="chat-mic-menu-note">Buscando micrófonos…</div>';
+    document.body.appendChild(menu);
+    if (micCaret) micCaret.setAttribute('aria-expanded', 'true');
+    _placeMicMenu(menu, anchor);
+    setTimeout(() => {
+      document.addEventListener('pointerdown', _micMenuOutside, true);
+      document.addEventListener('keydown', _micMenuKey, true);
+      window.addEventListener('resize', _closeMicMenu);
+    }, 0);
+    let mics = [];
+    try { mics = vl ? await vl.listMics() : []; } catch (_) {}
+    if (!document.body.contains(menu)) return;
+    const current = vl ? vl.getMicDeviceId() : '';
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const items = [{ id: '', label: 'Predeterminado del sistema' }].concat(mics);
+    menu.innerHTML = '<div class="chat-mic-menu-title">Micrófono</div>'
+      + items.map((m) => `<button type="button" role="menuitemradio" class="chat-mic-menu-item" data-id="${esc(m.id)}" aria-checked="${m.id === current}">`
+        + `<span class="chk">${m.id === current ? '✓' : ''}</span><span class="lbl" title="${esc(m.label)}">${esc(m.label)}</span></button>`).join('')
+      + (mics.length ? '' : '<div class="chat-mic-menu-note">No se detectaron otros micrófonos (o falta el permiso del micrófono).</div>');
+    menu.querySelectorAll('.chat-mic-menu-item').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const id = b.dataset.id || '';
+        if (vl) vl.setMicDeviceId(id);
+        if (voiceRecorderModule.restartWake) voiceRecorderModule.restartWake();
+        uiModule.showToast('Micrófono: ' + (items.find((m) => m.id === id) || items[0]).label);
+        _closeMicMenu();
+      });
+    });
+    _placeMicMenu(menu, anchor);
+  }
+  window.addEventListener('ruffs-mic-fallback', () => {
+    uiModule.showToast('El micrófono elegido no está disponible: se usa el predeterminado');
+  });
+  if (micCaret) {
+    micCaret.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); _openMicMenu(micCaret); });
+  }
+  if (micBtn) {
+    // Clic derecho (PC) o pulsación larga (Android/táctil) abren el menú.
+    micBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      _micMenuAt = Date.now();
+      _openMicMenu(micCaret && micCaret.style.display !== 'none' ? micCaret : micBtn);
+    });
+  }
+
   if (micBtn) {
     micBtn.addEventListener('click', (e) => {
       e.preventDefault();
+      // La pulsación larga que abrió el menú no debe además empezar a grabar.
+      if (Date.now() - _micMenuAt < 800) return;
       if (voiceRecorderModule.getIsRecording()) {
         voiceRecorderModule.stopRecording();
         _syncMicBtn();

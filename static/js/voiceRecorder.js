@@ -289,6 +289,14 @@ export function configure(p = {}) {
 
 export function getPrefs() { return { ..._prefs }; }
 
+/** Tras cambiar de micrófono: la palabra de activación vuelve a abrirlo. */
+export function restartWake() {
+  if (_wake && !_wake.woken && _wake.mode !== 'dictate') {
+    _pauseWake();
+    _resumeWakeSoon(300);
+  }
+}
+
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -514,7 +522,7 @@ export function startRecording(onFileCreated, showToast, showError) {
 
   audioChunks = [];
 
-  navigator.mediaDevices.getUserMedia({ audio: true })
+  voiceLocal.getMicStream()   // RUFFS: el micrófono elegido en el menú ▾
     .then(stream => {
       _mediaStream = stream; // EDGE FIX: Store stream for browser STT
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -650,6 +658,7 @@ const voiceRecorderModule = {
   getPrefs,
   getWakeState,
   effectiveProvider,
+  restartWake,
   get _sttProvider() { return _sttProvider; },
   set _sttProvider(v) { _sttProvider = v; },
 };

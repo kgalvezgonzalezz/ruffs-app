@@ -36,6 +36,59 @@ function _downsample(f32, inRate, outRate) {
 
 async function _json(r) { try { return await r.json(); } catch (_) { return {}; } }
 
+// ── RUFFS: micrófono elegido (se guarda en este dispositivo) ──
+const MIC_KEY = 'ruffs-mic-device';
+
+export function getMicDeviceId() {
+  try { return localStorage.getItem(MIC_KEY) || ''; } catch (_) { return ''; }
+}
+
+export function setMicDeviceId(id) {
+  try { if (id) localStorage.setItem(MIC_KEY, id); else localStorage.removeItem(MIC_KEY); } catch (_) {}
+}
+
+/** getUserMedia con el micrófono elegido; si ya no existe, el predeterminado. */
+export async function getMicStream(base) {
+  const id = getMicDeviceId();
+  const audio = Object.assign({}, base || {});
+  if (id) audio.deviceId = { exact: id };
+  const ask = () => navigator.mediaDevices.getUserMedia({ audio: Object.keys(audio).length ? audio : true });
+  try {
+    return await ask();
+  } catch (e) {
+    if (id && e && /Overconstrained|NotFound|NotReadable/.test(e.name || '')) {
+      setMicDeviceId('');
+      delete audio.deviceId;
+      try { window.dispatchEvent(new CustomEvent('ruffs-mic-fallback')); } catch (_) {}
+      return ask();
+    }
+    throw e;
+  }
+}
+
+/** Micrófonos del sistema: [{id, label}] (sin los alias «default»/«communications»). */
+export async function listMics() {
+  const md = navigator.mediaDevices;
+  if (!md || !md.enumerateDevices) return [];
+  let mics = (await md.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  if (mics.length && mics.every(d => !d.label)) {
+    // Los nombres solo se ven con permiso de micrófono: se abre y cierra un instante.
+    try {
+      const s = await md.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      mics = (await md.enumerateDevices()).filter(d => d.kind === 'audioinput');
+    } catch (_) {}
+  }
+  const seen = new Set();
+  return mics
+    .filter(d => d.deviceId && d.deviceId !== 'default' && d.deviceId !== 'communications')
+    .filter(d => (seen.has(d.deviceId) ? false : (seen.add(d.deviceId), true)))
+    .map((d, i) => ({
+      id: d.deviceId,
+      label: (d.label || `Micrófono ${i + 1}`).replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').trim(),
+    }));
+}
+
 export async function status(lang) {
   const r = await fetch(`${API}/status${lang ? '?lang=' + encodeURIComponent(lang) : ''}`, { credentials: 'same-origin' });
   return _json(r);
@@ -207,9 +260,7 @@ export function listen(opts = {}) {
       // Sin cancelación de eco ni ganancia automática: con esos filtros Windows
       // trata el micrófono como una llamada y BAJA un 80 % (o silencia) los
       // demás sonidos mientras está abierto — la voz de RUFFS no se oía.
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
-      });
+      stream = await getMicStream({ echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 });
       const AC = window.AudioContext || window.webkitAudioContext;
       try { ctx = new AC({ sampleRate: 16000 }); } catch (_) { ctx = new AC(); }
       inRate = ctx.sampleRate;
@@ -234,6 +285,6 @@ export function listen(opts = {}) {
   };
 }
 
-const voiceLocal = { status, ensureModel, listen };
+const voiceLocal = { status, ensureModel, listen, listMics, getMicDeviceId, setMicDeviceId, getMicStream };
 window.ruffsVoiceLocal = voiceLocal;
 export default voiceLocal;
