@@ -1090,6 +1090,8 @@ async function initTtsSettings() {
         var _pl = ((_pv && _pv.lang) || (prov === 'browser' && !getVoice() ? navigator.language : '') || '').slice(0, 2).toLowerCase();
         if (_pl === 'es') testText = 'Hola, soy RUFFS. Así suena esta voz.';
         else if (_pl === 'pt') testText = 'Olá, eu sou o RUFFS. É assim que esta voz soa.';
+        // RUFFS: que la voz lo pronuncie como palabra, no letra a letra (Android).
+        if (window.ruffsSpeakable) testText = window.ruffsSpeakable(testText, wakeWordInput ? wakeWordInput.value : '');
       } catch (_) {}
       previewPlaying = true; previewBtn.textContent = 'Loading...';
       try {

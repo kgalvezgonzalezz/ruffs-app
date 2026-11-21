@@ -1,6 +1,25 @@
 // static/js/tts-ai.js
 // AI Text-to-Speech Module — supports server TTS and browser Web Speech API
 
+// RUFFS: voces como la de Google en Android leen las palabras en MAYÚSCULAS
+// letra a letra («R, U, F, F, S»). El nombre de RUFFS y la palabra de
+// activación (sea cual sea) se pasan a «Ruffs» antes de hablar.
+export function speakableNames(text, extra) {
+    if (!text) return text;
+    const names = ['RUFFS'];
+    if (extra && String(extra).trim().toLowerCase() !== 'ruffs') names.push(String(extra).trim());
+    for (const name of names) {
+        if (name.length < 2) continue;
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        const nice = name.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        text = text.replace(new RegExp('(^|[^\\p{L}\\p{N}])' + esc + '(?=$|[^\\p{L}\\p{N}])', 'giu'),
+            (m, pre) => pre + nice);
+    }
+    return text;
+}
+window.ruffsSpeakable = (text, extra) => speakableNames(text,
+    extra || (window.aiTTSManager && window.aiTTSManager.wakeWord) || '');
+
 class AITTSManager {
     constructor() {
         this.currentAudio = null;
@@ -93,7 +112,7 @@ class AITTSManager {
             .replace(/\n{3,}/g, '\n\n') // Normalize line breaks
             .trim();
 
-        return text;
+        return speakableNames(text, this.wakeWord);
     }
 
     getCacheKey(text) {

@@ -230,3 +230,47 @@ def test_agent_can_switch_microphone():
     assert "window.ruffsSetMicByName = async (query)" in app and "camara: ['camera', 'webcam', 'cam']" in app
     assert ".filter((x) => x.score >= 100)" in app      # solo si coinciden todas las palabras
     assert (ROOT / "docs/agente/cambiar-microfono.md").is_file()
+
+
+_VOZ_JS = r"""
+import fs from "fs"; import vm from "vm"; import { pathToFileURL } from "url";
+const root = process.argv[2];
+Object.assign(globalThis, { window: globalThis, addEventListener() {}, localStorage: { getItem: () => null },
+  fetch: async () => ({ json: async () => ({}) }) });
+console.error = () => {}; console.log = ((log) => (...a) => { if (!String(a[0]).startsWith("[WakeWord]")) log(...a); })(console.log);
+vm.runInThisContext(fs.readFileSync(root + "/static/js/wakeWord.js", "utf8"));
+const { speakableNames } = await import(pathToFileURL(root + "/static/js/tts-ai.js").href);
+const m = window.wakeWordMatches, d = window.wakeWordDetector;
+let got = null; d.setKeyword("RUFFS"); d.onActivate = (c) => { got = c; }; d.stop = () => {};
+d._onResult({ resultIndex: 0, results: [Object.assign([{ transcript: "Rúfus abre mi correo" }], { isFinal: true })] });
+process.stdout.write(JSON.stringify({
+  preview: speakableNames("Hola, soy RUFFS. Así suena esta voz.", "RUFFS"),
+  custom: speakableNames("RUFFS y JARVIS; ruffsito igual.", "Jarvis"),
+  yes: ["ruffs", "Rufus", "rafs", "Rúfs", "roughs", "rugs"].every((w) => m(w, "ruffs")),
+  no: ["rafa", "ruta", "rojo", "rusia", "casa", "rubio"].some((w) => m(w, "ruffs")),
+  jarvis: m("jarbis", "jarvis") && !m("jardín", "jarvis"),
+  command: got }));
+"""
+
+
+def test_android_says_ruffs_as_a_word_and_hears_it_loosely(tmp_path):
+    """Android: la voz de Google leía «RUFFS» letra a letra, y la palabra de
+    activación solo aceptaba la palabra exacta (sirve para cualquier palabra)."""
+    import json
+    import shutil
+    import subprocess
+    assert "return speakableNames(text, this.wakeWord);" in _read("static/js/tts-ai.js")
+    assert "window.ruffsSpeakable(testText, wakeWordInput ? wakeWordInput.value : '')" in _read("static/js/settings.js")
+    assert "kw.every((w, j) => wakeWordMatches(words[i + j], w))" in _read("static/js/wakeWord.js")
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("sin Node.js")
+    script = tmp_path / "voz.mjs"
+    script.write_text(_VOZ_JS, encoding="utf-8")
+    out = subprocess.run([node, str(script), str(ROOT).replace("\\", "/")], capture_output=True, text=True,
+                         encoding="utf-8", timeout=60)
+    r = json.loads(out.stdout.strip().splitlines()[-1])
+    assert r["preview"] == "Hola, soy Ruffs. Así suena esta voz."
+    assert r["custom"] == "Ruffs y Jarvis; ruffsito igual."
+    assert r["yes"] and not r["no"] and r["jarvis"]
+    assert r["command"] == "abre mi correo"

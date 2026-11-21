@@ -8,6 +8,38 @@
  * Works on Chrome, Edge, Brave, Opera. NOT on Firefox.
  */
 
+// RUFFS: el reconocedor (sobre todo el de Android) escribe la palabra de
+// activación de muchas formas: «Rufus», «rafs», «Rúfs», «roughs»… Se compara
+// por sonido (clave fonética) y se acepta una letra de diferencia en palabras
+// de 4 letras o más. Sirve para cualquier palabra que elija el usuario.
+function _wwFold(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+function _wwPhon(w) {
+  return _wwFold(w).replace(/[^a-z0-9]/g, '')
+    .replace(/gh/g, 'f').replace(/ph/g, 'f').replace(/ou|oo/g, 'u').replace(/qu/g, 'k')
+    .replace(/c(?=[ei])/g, 's').replace(/c/g, 'k').replace(/z/g, 's').replace(/v/g, 'b')
+    .replace(/w/g, 'u').replace(/y/g, 'i').replace(/h/g, '').replace(/(.)\1+/g, '$1');
+}
+function _wwLev1(a, b) {          // ¿distancia de edición ≤ 1?
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, diff = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++diff > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return diff + (a.length - i) + (b.length - j) <= 1;
+}
+function wakeWordMatches(heard, keyword) {
+  const h = _wwPhon(heard), k = _wwPhon(keyword);
+  if (!h || !k) return false;
+  if (h === k) return true;
+  return k.length >= 4 && h[0] === k[0] && _wwLev1(h, k);
+}
+window.wakeWordMatches = wakeWordMatches;
+
 class WakeWordDetector {
   constructor() {
     this.keyword = 'ruffs';
@@ -87,13 +119,13 @@ class WakeWordDetector {
     const variants = [this.keyword].concat(this.keyword === 'ruffs'
       ? ['rufs', 'rafs', 'raf', 'rufus', 'ruff', 'rough', 'roughs', 'rugs'] : []);
     // Palabra a palabra (sin signos): la clave puede ser de una o varias palabras.
-    const clean = (s) => s.toLowerCase().replace(/[^a-z0-9áéíóúüñ\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const clean = (s) => _wwFold(s).replace(/[^a-z0-9ñ\s]/g, ' ').split(/\s+/).filter(Boolean);
     const words = clean(finalText);
     let after = -1;
     for (const v of variants) {
       const kw = clean(v);
       for (let i = 0; kw.length && i + kw.length <= words.length; i++) {
-        if (kw.every((w, j) => words[i + j] === w)) { if (after < 0 || i + kw.length < after) after = i + kw.length; break; }
+        if (kw.every((w, j) => wakeWordMatches(words[i + j], w))) { if (after < 0 || i + kw.length < after) after = i + kw.length; break; }
       }
     }
     if (after < 0) return;
