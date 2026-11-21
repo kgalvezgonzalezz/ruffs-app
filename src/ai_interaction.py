@@ -1273,6 +1273,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
       open_panel <name>       — Open a panel (documents, gallery, email, sessions, notes, memories, skills, settings, cookbook)
       open_email_reply <uid> [folder] [reply|reply-all|ai-reply] — Open a reply draft document for an email; does not send
       get_toggles             — Return current toggle states (server-side knowledge)
+      set_mic <name|predeterminado|menu> — RUFFS: use another microphone (matched by name in the user's window)
     """
     lines = content.strip().split("\n")
     if not lines:
@@ -1552,6 +1553,24 @@ async def do_ui_control(content: str, session_id: Optional[str] = None, owner: O
             "folder": folder or "INBOX",
             "mode": mode,
             "results": f"Opening reply draft for email UID {uid}",
+        }
+
+    elif action in ("set_mic", "set_microphone", "microphone", "mic", "microfono", "micrófono"):
+        # RUFFS: la lista de micrófonos vive en la ventana del usuario (el
+        # servidor no la ve): se manda el nombre y la ventana busca el que
+        # coincide; si no hay, abre el menú para que el usuario elija.
+        query = " ".join(lines[0].strip().split()[1:]).strip()
+        if not query and len(lines) > 1:
+            query = lines[1].strip()
+        query = query.strip('"\'«»“”') or "menu"
+        return {
+            "ui_event": "set_mic",
+            "query": query[:80],
+            "results": (f"Asked the user's RUFFS window to switch the microphone to «{query}». "
+                        "It matches by name among the microphones it detects; if none matches it opens the "
+                        "microphone menu so the user picks. Tell the user which one you asked for."
+                        if query != "menu" else
+                        "Opened the microphone menu in the user's window so they can pick one."),
         }
 
     elif action == "get_toggles":

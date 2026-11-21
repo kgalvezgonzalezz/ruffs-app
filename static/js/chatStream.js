@@ -125,6 +125,9 @@ export function handleUIControl(uiData) {
         // chip injection needed here anymore.
       }
 
+    } else if (uiEvent === 'set_mic' || uiData.ui_event === 'set_mic') {
+      // RUFFS: el agente pidió usar otro micrófono (lo busca la ventana por nombre).
+      if (window.ruffsSetMicByName) window.ruffsSetMicByName(uiData.query || '');
     } else if (uiEvent === 'open_panel' || uiData.ui_event === 'open_panel') {
       var panel = uiData.panel;
       if (panel === 'documents') {

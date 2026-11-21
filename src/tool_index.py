@@ -386,6 +386,8 @@ class ToolIndex:
                    "the writeup", "saved document", "in my library", "in the library"}):
             {"manage_documents", "edit_document"},
         # RUFFS: «abre este .docx / archivo en el editor» → importarlo al editor.
+        frozenset({"micrófono", "microfono", "micrófonos", "microfonos", "micro", "mic", "microphone"}):
+            {"ui_control"},
         frozenset({"docx", "word", "editor", "importa", "importar", "import"}):
             {"manage_documents"},
         # Theme / UI control intent

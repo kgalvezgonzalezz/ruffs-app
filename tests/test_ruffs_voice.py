@@ -208,3 +208,25 @@ def test_mic_picker():
     app = _read("static/app.js")
     assert "micBtn.addEventListener('contextmenu'" in app and "async function _openMicMenu(anchor)" in app
     assert "if (Date.now() - _micMenuAt < 800) return;" in app       # pulsación larga no graba
+
+
+def test_agent_can_switch_microphone():
+    """El agente cambia el micrófono con ui_control set_mic <nombre|predeterminado|menu>."""
+    import asyncio
+    import src.agent_tools  # noqa: F401  (orden de imports)
+    from src.ai_interaction import do_ui_control
+    from src.tool_schemas import function_call_to_tool_block, FUNCTION_TOOL_SCHEMAS
+    r = asyncio.run(do_ui_control("set_mic fifine"))
+    assert r["ui_event"] == "set_mic" and r["query"] == "fifine"
+    assert asyncio.run(do_ui_control("set_mic"))["query"] == "menu"
+    assert function_call_to_tool_block("ui_control", '{"action": "set_mic", "name": "aula"}').content == "set_mic aula"
+    ui = next(s for s in FUNCTION_TOOL_SCHEMAS if s["function"]["name"] == "ui_control")
+    assert "set_mic" in ui["function"]["parameters"]["properties"]["action"]["enum"]
+    agent = _read("src/agent_loop.py")
+    assert "- RUFFS — microphone:" in agent and "`set_mic <microphone name|predeterminado|menu>`" in agent
+    assert '"micrófono", "microfono"' in _read("src/tool_index.py")
+    assert "uiEvent === 'set_mic'" in _read("static/js/chatStream.js")
+    app = _read("static/app.js")
+    assert "window.ruffsSetMicByName = async (query)" in app and "camara: ['camera', 'webcam', 'cam']" in app
+    assert ".filter((x) => x.score >= 100)" in app      # solo si coinciden todas las palabras
+    assert (ROOT / "docs/agente/cambiar-microfono.md").is_file()

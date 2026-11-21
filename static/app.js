@@ -3766,6 +3766,56 @@ function startOdysseusApp() {
     });
     _placeMicMenu(menu, anchor);
   }
+  // RUFFS: el agente puede cambiar el micrófono (ui_control set_mic <nombre>).
+  const _normMic = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(el|la|los|las|de|del|mi|micro|microfono|microfonos|microphone|mic|usa|usar|pon|cambia|al|a)\b/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  window.ruffsSetMicByName = async (query) => {
+    const vl = window.ruffsVoiceLocal;
+    const anchor = (micCaret && micCaret.style.display !== 'none') ? micCaret : micBtn;
+    if (!vl || !anchor) return { ok: false };
+    const raw = String(query || '').trim().toLowerCase();
+    const q = _normMic(query);
+    if (!q || /^(menu|lista|list|elegir|choose|cuales|cuales hay)$/.test(q) || /^(menu|menú)$/.test(raw)) {
+      _openMicMenu(anchor);
+      return { ok: true, menu: true };
+    }
+    const choose = (id, label) => {
+      vl.setMicDeviceId(id);
+      if (voiceRecorderModule.restartWake) voiceRecorderModule.restartWake();
+      uiModule.showToast('Micrófono: ' + label);
+      return { ok: true, id, label };
+    };
+    if (/^(predeterminad|default|sistema|system|normal)/.test(q)) return choose('', 'Predeterminado del sistema');
+    let mics = [];
+    try { mics = await vl.listMics(); } catch (_) {}
+    let hit = null;
+    if (/^\d+$/.test(q)) hit = mics[parseInt(q, 10) - 1] || null;
+    if (!hit) {
+      const words = q.split(' ').filter(Boolean);
+      // Equivalencias español/inglés: «cámara» encuentra «USB camera», etc.
+      const SYN = {
+        camara: ['camera', 'webcam', 'cam'], camera: ['camara', 'webcam'], webcam: ['camera', 'camara'],
+        cascos: ['headset', 'auriculares', 'headphones'], auriculares: ['headset', 'headphones', 'cascos', 'earbuds', 'buds'],
+        headset: ['auriculares', 'cascos', 'headphones'], audifonos: ['headset', 'headphones', 'auriculares'],
+        bluetooth: ['bt', 'hands free', 'manos libres'], portatil: ['laptop', 'internal', 'integrado', 'array'],
+        integrado: ['internal', 'array', 'realtek'], interno: ['internal', 'array', 'realtek'],
+      };
+      const has = (l, w) => [w].concat(SYN[w] || []).some((v) => l.includes(v));
+      const scored = mics.map((m) => {
+        const l = _normMic(m.label);
+        const all = words.every((w) => has(l, w));
+        const some = words.filter((w) => has(l, w)).length;
+        return { m, score: (all ? 100 : 0) + some };
+      }).filter((x) => x.score >= 100).sort((a, b) => b.score - a.score);   // todas las palabras dichas
+      if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score)) hit = scored[0].m;
+    }
+    if (hit) return choose(hit.id, hit.label);
+    uiModule.showToast(`No encontré un micrófono «${query}»: elige uno de la lista`);
+    _openMicMenu(anchor);
+    return { ok: false, menu: true };
+  };
+
   window.addEventListener('ruffs-mic-fallback', () => {
     uiModule.showToast('El micrófono elegido no está disponible: se usa el predeterminado');
   });
