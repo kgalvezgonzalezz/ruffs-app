@@ -42,8 +42,14 @@ def test_github_works_without_system_certificates(empty_system_store):
     assert "CERTIFICATE_VERIFY_FAILED" in str(e.value)
     # Con el arreglo (sistema + certifi): funciona.
     from src.https import urlopen
-    with urlopen(URL, timeout=15) as r:
-        assert r.status == 200
+    try:
+        with urlopen(URL, timeout=15) as r:
+            assert r.status == 200
+    except urllib.error.HTTPError as err:
+        # GitHub limita las consultas sin sesión desde los equipos compartidos de CI
+        # (403 «rate limit exceeded»). Una respuesta HTTP ya prueba que el
+        # certificado se verificó: lo que comprueba este test.
+        assert err.code in (403, 429), err
 
 
 def test_context_still_verifies():
