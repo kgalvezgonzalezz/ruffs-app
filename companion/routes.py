@@ -248,4 +248,80 @@ def setup_companion_routes() -> APIRouter:
 </div></body></html>"""
         return HTMLResponse(page)
 
+    @router.get("/notifications")
+    def notifications(request: Request, after: int = 0):
+        """Para la app de Android con la app cerrada: avisos de tareas (sin
+        consumirlos), recordatorios de las próximas 48 h (el teléfono programa
+        una alarma para cada uno) y la palabra de activación."""
+        owner = token_owner(request)
+        if not owner:
+            return {"seq": 0, "notifications": [], "reminders": []}
+        from src.event_bus import get_task_scheduler
+        sched = get_task_scheduler()
+        seq, feed = sched.companion_notifications(owner=owner, after=max(int(after or 0), 0)) if sched else (0, [])
+        try:
+            from src.settings import load_settings
+            s = load_settings() or {}
+            wake = {"word": s.get("tts_wake_word") or "RUFFS", "enabled": bool(s.get("tts_wake_word_enabled"))}
+        except Exception:
+            wake = {"word": "RUFFS", "enabled": False}
+        return {
+            "seq": seq,
+            "notifications": [
+                {"seq": n["seq"], "title": n.get("task_name") or "RUFFS", "body": n.get("body") or "",
+                 "status": n.get("status"), "task_id": n.get("task_id"), "timestamp": n.get("timestamp")}
+                for n in feed if n.get("body") or n.get("status") != "success"
+            ],
+            "reminders": upcoming_reminders(owner),
+            "wake_word": wake,
+        }
+
     return router
+
+
+def due_epoch_ms(due: str | None) -> int | None:
+    """due_date de una nota → milisegundos. Sin zona horaria = hora local del
+    PC (igual que la interpreta la página)."""
+    if not due:
+        return None
+    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(str(due).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.astimezone()
+    return int(dt.timestamp() * 1000)
+
+
+def upcoming_reminders(owner: str, hours: int = 48) -> list[dict]:
+    """Notas con fecha (recordatorios) de los últimos 5 min a las próximas `hours`."""
+    import time
+    from core.database import SessionLocal, Note
+    now = int(time.time() * 1000)
+    lo, hi = now - 5 * 60 * 1000, now + hours * 3600 * 1000
+    out = []
+    db = SessionLocal()
+    try:
+        rows = (db.query(Note)
+                .filter(Note.due_date.isnot(None), Note.due_date != "", Note.archived.is_(False))
+                .filter((Note.owner == owner) | (Note.owner.is_(None)))
+                .all())
+        for n in rows:
+            if not owner_can_see(n.owner, owner):
+                continue
+            ms = due_epoch_ms(n.due_date)
+            if ms is None or not (lo <= ms <= hi):
+                continue
+            body = (n.content or "").strip()
+            if not body and n.items:
+                try:
+                    import json
+                    body = ", ".join(i.get("text", "") for i in json.loads(n.items) if not i.get("done"))
+                except Exception:
+                    body = ""
+            out.append({"id": n.id, "title": n.title or "Recordatorio", "body": body[:300], "due": ms,
+                        "repeat": n.repeat or "none"})
+    finally:
+        db.close()
+    return sorted(out, key=lambda r: r["due"])

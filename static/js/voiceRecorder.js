@@ -33,7 +33,15 @@ function _browserSttWorks() {
   return !!(window.SpeechRecognition || window.webkitSpeechRecognition) && !_isEmbeddedWindow();
 }
 
+// RUFFS: en la app de Android el micrófono llega por el reconocedor nativo del
+// teléfono (puente de la app); la página no recibe un flujo de audio real, así
+// que la voz local (Vosk), que lo necesita, no puede funcionar ahí.
+function _inAndroidApp() {
+  return !!(window.__ruffs && window.__ruffs.isApp);
+}
+
 export function effectiveProvider() {
+  if (_inAndroidApp() && (_sttProvider === 'vosk' || _sttProvider === 'browser') && _browserSttWorks()) return 'browser';
   if (_sttProvider === 'vosk') return 'vosk';
   if (_sttProvider === 'browser' && !_browserSttWorks()) return 'vosk';
   return _sttProvider;
@@ -537,7 +545,7 @@ export function startRecording(onFileCreated, showToast, showError) {
         stream.getTracks().forEach(track => track.stop());
 
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const provider = _sttProvider;
+        const provider = effectiveProvider();
 
         if (provider === 'browser') {
           const transcript = await stopBrowserSTT();
@@ -581,7 +589,7 @@ export function startRecording(onFileCreated, showToast, showError) {
       recordingStartTime = new Date();
 
       // Start browser STT if that's the provider
-      if (_sttProvider === 'browser') {
+      if (effectiveProvider() === 'browser') {
         startBrowserSTT();
       }
 

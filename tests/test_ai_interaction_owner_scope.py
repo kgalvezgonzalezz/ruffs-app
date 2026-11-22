@@ -18,14 +18,17 @@ def test_model_resolver_applies_owner_filter():
 
 
 def test_model_listing_and_image_fallback_are_owner_scoped():
+    from src import image_gen   # RUFFS: la elección del modelo de imagen vive aquí
     list_body = _source(ai_interaction.do_list_models)
     image_body = _source(ai_interaction.do_generate_image)
+    pick_body = _source(image_gen.pick_model)
 
     assert "owner: Optional[str] = None" in list_body
     assert "owner_filter(query, ModelEndpoint, owner)" in list_body
-    assert "_resolve_model(candidate, owner=owner)" in image_body
-    assert "owner_filter(_img_q, ModelEndpoint, owner)" in image_body
-    assert "_resolve_model(model_spec, owner=owner)" in image_body
+    assert "owner=owner" in image_body
+    assert "_resolve_model(cand, owner=owner)" in pick_body
+    assert "owner_filter(q, ModelEndpoint, owner)" in pick_body
+    assert "_resolve_model(wanted, owner=owner)" in pick_body
 
 
 @pytest.mark.parametrize("tool,content", [

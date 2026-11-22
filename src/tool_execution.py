@@ -1106,6 +1106,11 @@ async def execute_tool_block(
 
     tool = block.tool_type
     content = block.content
+    # RUFFS: el MCP integrado de imágenes se ejecuta dentro de RUFFS: así sabe
+    # qué persona lo pide (sus adjuntos) y en qué chat, y la imagen se ve en el chat.
+    if tool in ("mcp__image_gen__generate_image", "mcp__image_gen__edit_image"):
+        from src.image_gen import mcp_call_to_native
+        tool, content = mcp_call_to_native(tool, content)
 
     # Misformatted tool call detection: model put JSON inside ```python``` (or
     # similar) without naming the tool. Common with MiniMax-style outputs.
@@ -1186,7 +1191,16 @@ async def execute_tool_block(
     # Route MCP-extracted tools through the MCP manager. Forward
     # the progress callback so long-running subprocess tools
     # (bash, python) can stream `tool_progress` events to the UI.
-    if tool in _MCP_TOOL_MAP:
+    if tool in ("generate_image", "edit_image"):
+        from src.ai_interaction import do_generate_image, do_edit_image
+        desc = f"{tool}: {content.split(chr(10))[0][:80]}"
+        fn = do_edit_image if tool == "edit_image" else do_generate_image
+        result = await fn(content, session_id=session_id, owner=owner)
+        if "error" not in result:
+            result = {**result, "output": result.get("results", ""), "exit_code": 0}
+        else:
+            result = {**result, "exit_code": 1}
+    elif tool in _MCP_TOOL_MAP:
         first_line = content.split(chr(10))[0][:80]
         desc = f"{tool}: {first_line}"
         result = await _call_mcp_tool(tool, content, progress_cb=progress_cb)

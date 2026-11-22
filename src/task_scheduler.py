@@ -248,6 +248,10 @@ class TaskScheduler:
         # tasks could be double-dispatched.
         self._executing_lock = asyncio.Lock()
         self._pending_notifications = []  # completed task notifications
+        # RUFFS: copia que NO se consume, para la app de Android (cada aviso con
+        # un número creciente; el teléfono pide «los posteriores al N»).
+        self._companion_feed = []
+        self._companion_seq = 0
         self._task_defer_counts = {}
         # Strict serial execution — exactly one task runs at a time. Anything
         # else (manual trigger, scheduled dispatch, task chain) waits behind
@@ -320,6 +324,18 @@ class TaskScheduler:
         # Cap at 50 to avoid unbounded growth
         if len(self._pending_notifications) > 50:
             self._pending_notifications = self._pending_notifications[-50:]
+        # (getattr: también funciona si el objeto se creó sin __init__)
+        self._companion_seq = getattr(self, "_companion_seq", 0) + 1
+        feed = getattr(self, "_companion_feed", None) or []
+        feed.append({**self._pending_notifications[-1], "seq": self._companion_seq})
+        self._companion_feed = feed[-100:]
+
+    def companion_notifications(self, owner: str = None, after: int = 0) -> tuple[int, list]:
+        """Avisos posteriores a `after` para la app del teléfono, sin borrarlos
+        (la página del PC sigue recibiendo los suyos con pop_notifications)."""
+        out = [n for n in getattr(self, "_companion_feed", [])
+               if n["seq"] > after and (owner is None or n.get("owner") == owner)]
+        return getattr(self, "_companion_seq", 0), out
 
     def pop_notifications(self, owner: str = None) -> list:
         """Return and clear pending notifications.

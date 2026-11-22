@@ -80,7 +80,8 @@ BUILTIN_TOOL_DESCRIPTIONS: Dict[str, str] = {
     "edit_document": "Preferred tool for editing an existing document — targeted find-and-replace. Use for any small change: add a function, fix a bug, tweak a section, rename things.",
     "update_document": "Replace the entire active document content. ONLY for full rewrites (>50% changed). Do not use for small edits — use edit_document instead.",
     "suggest_document": "Suggest changes to the active document with explanations. For code review, proofreading, feedback requests.",
-    "generate_image": "Generate an AI image from a text prompt. Specify model, size, and quality. Art, illustrations, photos.",
+    "generate_image": "Generate an AI image from a text prompt (dibuja, crea una imagen, ilustración, logo, foto). Uses the user's own API key (OpenRouter or OpenAI). Optional model, size/aspect ratio and quality.",
+    "edit_image": "Edit or modify an existing image (attached by the user or generated before): add or remove things, change parts, background, style, colors; combine images. «modifica esta imagen», «agrégale…», «cámbiale…», «quítale…».",
     "chat_with_model": "Send a message to a different AI model. Compare responses, get specialized help, delegate tasks.",
     "ask_teacher": "Ask a more capable model for help with a difficult problem. Escalate complex tasks.",
     "pipeline": "Run a multi-step AI pipeline with multiple models. Chain tasks together in sequence.",
@@ -388,6 +389,11 @@ class ToolIndex:
         # RUFFS: «abre este .docx / archivo en el editor» → importarlo al editor.
         frozenset({"micrófono", "microfono", "micrófonos", "microfonos", "micro", "mic", "microphone"}):
             {"ui_control"},
+        # RUFFS: imágenes (crear y editar con la API key de la persona)
+        frozenset({"imagen", "imágenes", "imagenes", "foto", "fotos", "dibuja", "dibujo", "ilustración", "ilustracion",
+                   "logo", "image", "picture", "draw", "illustration", "edita", "modifica", "agrégale", "agregale",
+                   "cámbiale", "cambiale", "quítale", "quitale", "fondo"}):
+            {"generate_image", "edit_image"},
         frozenset({"docx", "word", "editor", "importa", "importar", "import"}):
             {"manage_documents"},
         # Theme / UI control intent

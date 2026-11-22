@@ -204,7 +204,7 @@ jobs:
           VENV_PY="$RUFFS_SUPPORT_DIR/app/.venv/bin/python"
           "$RUFFS_SUPPORT_DIR/bin/uv" pip install --python "$VENV_PY" --quiet pytest
           mkdir -p data
-          PYTHONUTF8=1 "$VENV_PY" -m pytest -q tests/test_ruffs_core.py tests/test_ruffs_mcp.py tests/test_ruffs_titles.py tests/test_ruffs_mcp_catalog.py tests/test_ruffs_remote_setup.py tests/test_static_imports_exist.py tests/test_ruffs_computer_use.py tests/test_ruffs_update.py tests/test_ruffs_tool_guard.py tests/test_ruffs_skills_bulk.py tests/test_ruffs_mcp_persist.py tests/test_ruffs_https.py tests/test_ruffs_voice_defaults.py tests/test_ruffs_docx.py tests/test_ruffs_google.py tests/test_ruffs_voice.py tests/test_ruffs_autoplay.py tests/test_ruffs_agent_empty.py tests/test_ruffs_empleos.py
+          PYTHONUTF8=1 "$VENV_PY" -m pytest -q tests/test_ruffs_core.py tests/test_ruffs_mcp.py tests/test_ruffs_titles.py tests/test_ruffs_mcp_catalog.py tests/test_ruffs_remote_setup.py tests/test_static_imports_exist.py tests/test_ruffs_computer_use.py tests/test_ruffs_update.py tests/test_ruffs_tool_guard.py tests/test_ruffs_skills_bulk.py tests/test_ruffs_mcp_persist.py tests/test_ruffs_https.py tests/test_ruffs_voice_defaults.py tests/test_ruffs_docx.py tests/test_ruffs_google.py tests/test_ruffs_voice.py tests/test_ruffs_autoplay.py tests/test_ruffs_agent_empty.py tests/test_ruffs_empleos.py tests/test_ruffs_companion_notifications.py tests/test_ruffs_images.py tests/test_ai_interaction_owner_scope.py
 
       - name: Ventana de escritorio (pywebview) en macOS
         continue-on-error: true

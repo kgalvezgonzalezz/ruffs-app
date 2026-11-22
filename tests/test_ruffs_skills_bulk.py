@@ -37,7 +37,7 @@ def test_import_163_skills_in_one_call(env):
     assert "Imported 163 skill(s)" in res["results"], res
     from services.memory.skills import SkillsManager
     sm = SkillsManager(str(data))
-    skills = sm.load(owner="admin")
+    skills = [s for s in sm.load(owner="admin") if not s.get("builtin")]  # sin las integradas
     assert len(skills) == 163 and all(s["status"] == "published" for s in skills)
     assert sm.read_skill_reference("skill-042", "references/guia.md", owner="admin") == "Referencia 42"
     again = run({"action": "import", "path": str(src)})               # segunda vez: no duplica

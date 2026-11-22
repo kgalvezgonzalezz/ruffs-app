@@ -47,6 +47,15 @@ _active_streams: Dict[str, dict] = {}
 _IMAGE_MODEL_PREFIXES = ("gpt-image", "dall-e", "chatgpt-image")
 
 
+def _is_image_model_name(model: str) -> bool:
+    """RUFFS: también los modelos de imagen de OpenRouter (google/gemini-…-image…)."""
+    m = (model or "").strip().lower()
+    if any(m.startswith(prefix) for prefix in _IMAGE_MODEL_PREFIXES):
+        return True
+    from src.image_gen import is_image_model
+    return is_image_model(m)
+
+
 def _stream_set(session_id: str, **fields) -> None:
     """Update fields on the active-stream entry for `session_id`, or
     no-op if the entry has already been popped. Using .get() avoids a
@@ -133,7 +142,7 @@ def _is_image_generation_session(sess, owner: str | None = None) -> bool:
     models into the image-generation path.
     """
     model = (getattr(sess, "model", "") or "").strip()
-    if any(model.lower().startswith(prefix) for prefix in _IMAGE_MODEL_PREFIXES):
+    if _is_image_model_name(model):
         return True
 
     endpoint_url = (getattr(sess, "endpoint_url", "") or "").strip()
@@ -611,7 +620,7 @@ def setup_chat_routes(
             if not _privs.get("can_use_documents", True):
                 disabled_tools.update({"create_document", "edit_document", "update_document", "suggest_document"})
             if not _privs.get("can_generate_images", True):
-                disabled_tools.add("generate_image")
+                disabled_tools.update({"generate_image", "edit_image"})
             if not _privs.get("can_manage_memory", True):
                 disabled_tools.update({"manage_memory", "manage_skills"})
             if not _privs.get("can_use_research", True):
@@ -842,7 +851,13 @@ def setup_chat_routes(
                 _user_msg = message or ""
                 yield f'data: {json.dumps({"type": "tool_start", "tool": "generate_image", "command": _user_msg[:100]})}\n\n'
                 yield ": heartbeat\n\n"
-                _img_result = await do_generate_image(f"{_user_msg}\n{sess.model}", session, owner=_user)
+                # RUFFS: con imágenes adjuntas, el mensaje dice qué cambiarles.
+                _img_atts = [a for a in (att_ids or []) if a]
+                if _img_atts:
+                    from src.ai_interaction import do_edit_image
+                    _img_result = await do_edit_image(f"{_user_msg}\n{' '.join(_img_atts)}\n{sess.model}", session, owner=_user)
+                else:
+                    _img_result = await do_generate_image(f"{_user_msg}\n{sess.model}", session, owner=_user)
                 _img_output = _img_result.get("results", _img_result.get("error", ""))
                 _img_tool_data = {"type": "tool_output", "tool": "generate_image", "command": _user_msg[:100], "output": _img_output, "exit_code": 0 if "error" not in _img_result else 1}
                 for _k in ("image_url", "image_id", "image_prompt", "image_model", "image_size", "image_quality"):

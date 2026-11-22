@@ -34,6 +34,14 @@ logger = logging.getLogger(__name__)
 # Token / similarity helpers (kept for the relevance fallback)
 # ---------------------------------------------------------------------------
 
+# RUFFS: skills que vienen con RUFFS (p. ej. cómo generar/editar imágenes).
+# Viven en <repo>/skills_builtin/<categoría>/<nombre>/SKILL.md, las ve todo
+# el mundo, no se editan ni se borran desde la app, y una skill propia con el
+# mismo nombre las reemplaza.
+BUILTIN_SKILLS_ROOT = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                                   "skills_builtin")
+
+
 def _tokenize(text: str) -> set:
     return {w.strip('.,!?";:()[]') for w in (text or "").lower().split() if len(w) > 1}
 
@@ -162,6 +170,20 @@ class SkillsManager:
         for root, _dirs, files in os.walk(self.skills_root, followlinks=False):
             if "SKILL.md" in files:
                 yield os.path.join(root, "SKILL.md")
+
+    def _iter_builtin_files(self) -> Iterable[str]:
+        if not os.path.isdir(BUILTIN_SKILLS_ROOT):
+            return
+        for root, _dirs, files in os.walk(BUILTIN_SKILLS_ROOT, followlinks=False):
+            if "SKILL.md" in files:
+                yield os.path.join(root, "SKILL.md")
+
+    def _builtin(self, name: str) -> Optional[str]:
+        for path in self._iter_builtin_files():
+            sk = self._read_skill(path)
+            if sk and sk.name == name:
+                return path
+        return None
 
     def _read_skill(self, path: str) -> Optional[Skill]:
         try:
@@ -319,6 +341,19 @@ class SkillsManager:
             seen_names.add(sk.name)
         if repair_count:
             logger.info(f"Auto-repaired {repair_count} skills during load_all()")
+        # Integradas (las propias con el mismo nombre tienen prioridad)
+        for path in self._iter_builtin_files():
+            sk = self._read_skill(path)
+            if not sk or sk.name in seen_names:
+                continue
+            d = sk.to_dict()
+            d["builtin"] = True
+            d["owner"] = None
+            u = self._usage_entry(usage, sk.name, None)
+            d["uses"] = int(u.get("uses", 0))
+            d["last_used"] = u.get("last_used")
+            out.append(d)
+            seen_names.add(sk.name)
         # Legacy JSON entries — surfaced as draft, not editable from new flow
         if os.path.exists(self.legacy_file):
             try:
@@ -368,7 +403,9 @@ class SkillsManager:
         # leaked legacy / un-stamped skills to every authenticated user.
         # Hide them now; the owner needs to be backfilled on disk if those
         # skills should be visible to a specific user.
-        return [s for s in entries if s.get("owner") == owner]
+        own = {s.get("name") for s in entries if s.get("owner") == owner}
+        return [s for s in entries if s.get("owner") == owner
+                or (s.get("builtin") and s.get("name") not in own)]
 
     # ----------------------------------------------------------------------
     # CRUD — disk-backed
@@ -589,6 +626,10 @@ class SkillsManager:
                     return f.read()
             except Exception:
                 return None
+        builtin = self._builtin(name)
+        if builtin:
+            with open(builtin, encoding="utf-8") as f:
+                return f.read()
         return None
 
     def read_skill_reference(self, name: str, ref_path: str, owner: Optional[str] = None) -> Optional[str]:

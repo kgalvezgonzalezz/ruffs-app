@@ -1135,6 +1135,41 @@ FUNCTION_TOOL_SCHEMAS = [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": "Create a new image from a description with the user's own API key (OpenRouter or OpenAI). The image appears in the chat. Write the prompt in detail (subject, style, composition, light, text to include). Each image costs money on the user's key (about US$0.04), so make one at a time unless asked for more.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Detailed description of the image"},
+                    "size": {"type": "string", "description": "Optional: 1024x1024, 1536x1024 (landscape), 1024x1536 (portrait) or an aspect ratio like 16:9, 9:16, 4:3"},
+                    "quality": {"type": "string", "enum": ["low", "medium", "high", "auto"], "description": "Optional (OpenAI models)"},
+                    "model": {"type": "string", "description": "Optional; leave empty to use the one configured in Settings"},
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "edit_image",
+            "description": "Modify an existing image: add/remove/change elements, background, colors, style, or combine several images. Use when the user attaches a photo and asks to change it, or asks to change an image generated before («agrégale un sombrero», «cambia el fondo», «hazla estilo acuarela»). The result appears in the chat.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Exactly what to change, and what must stay the same"},
+                    "images": {"type": "array", "items": {"type": "string"},
+                               "description": "Images to edit: attachment ids shown as «[Image attached: name (id: X)]», generated image URLs (/api/generated-image/...), or [\"last\"] for the most recent image in this chat (default)"},
+                    "size": {"type": "string", "description": "Optional size or aspect ratio"},
+                    "model": {"type": "string", "description": "Optional; leave empty to use the configured one"},
+                },
+                "required": ["prompt"]
+            }
+        }
+    },
 ]
 
 
@@ -1328,6 +1363,15 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = json.dumps(args)
     elif tool_type == "ask_teacher":
         content = args.get("model", "auto") + "\n" + args.get("problem", "")
+    elif tool_type == "generate_image":
+        content = "\n".join([str(args.get("prompt", "")), str(args.get("model", "") or ""),
+                             str(args.get("size", "") or ""), str(args.get("quality", "") or "")])
+    elif tool_type == "edit_image":
+        imgs = args.get("images") or args.get("image") or ["last"]
+        if isinstance(imgs, str):
+            imgs = [imgs]
+        content = "\n".join([str(args.get("prompt", "")), " ".join(map(str, imgs)),
+                             str(args.get("model", "") or ""), str(args.get("size", "") or "")])
     else:
         content = json.dumps(args)
 

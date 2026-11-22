@@ -181,7 +181,7 @@ class ChatHandler:
                 ):
                     if main_is_vision:
                         # Main model can see images — just note it, image is passed via build_user_content.
-                        enhanced_message = f"{enhanced_message}\n\n[Image attached: {file_info['name']}]"
+                        enhanced_message = f"{enhanced_message}\n\n[Image attached: {file_info['name']} (id: {att_id})]"
                         _m = meta_by_id.get(att_id)
                         if _m is not None:
                             _m["vision_model"] = sess.model or ""
@@ -229,7 +229,7 @@ class ChatHandler:
                                         _vf.write(vl_desc)
                                 except Exception:
                                     pass
-                        enhanced_message = f"{enhanced_message}\n\n[Image: {file_info['name']}]\n{vl_desc}"
+                        enhanced_message = f"{enhanced_message}\n\n[Image: {file_info['name']} (id: {att_id})]\n{vl_desc}"
                         # Surface the description to the client live so it renders as a
                         # collapsible "image description" on the user bubble (not just
                         # after a refresh that re-parses the stored message).

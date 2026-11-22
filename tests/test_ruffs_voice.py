@@ -274,3 +274,12 @@ def test_android_says_ruffs_as_a_word_and_hears_it_loosely(tmp_path):
     assert r["custom"] == "Ruffs y Jarvis; ruffsito igual."
     assert r["yes"] and not r["no"] and r["jarvis"]
     assert r["command"] == "abre mi correo"
+
+
+def test_android_app_uses_native_recognizer_even_with_local_voice():
+    """En la app de Android la página no recibe un flujo de audio real: con
+    «Voz local (Vosk)» el dictado fallaba («createMediaStreamSource…»)."""
+    vr = _read("static/js/voiceRecorder.js")
+    assert "if (_inAndroidApp() && (_sttProvider === 'vosk' || _sttProvider === 'browser') && _browserSttWorks()) return 'browser';" in vr
+    assert "const provider = effectiveProvider();" in vr
+    assert "if (effectiveProvider() === 'browser') {\n        startBrowserSTT();" in vr.replace("\r\n", "\n")

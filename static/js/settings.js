@@ -677,34 +677,38 @@ async function initImageSettings() {
   try {
     const modelsRes = await fetch('/api/models', { credentials: 'same-origin' });
     const modelsData = await modelsRes.json();
-    // Inpaint-compat allowlist — image gen here is scoped to inpainting only,
-    // so DALL-E / GPT-Image-1 (no inpaint API) are excluded. Currently:
-    //   - any model with 'inpaint' in the id
-    //   - Stable Diffusion 3.5 Medium (inpaint via diffusers pipeline)
-    const _isInpaintModel = (mid) => {
+    // RUFFS: modelos que GENERAN imágenes en tus endpoints (OpenRouter: google/
+    // gemini-…-image, openai/gpt-5-image…; OpenAI: gpt-image-1, dall-e-3…), y
+    // los de inpainting locales. Mismo criterio que src/image_gen.is_image_model.
+    const _isImageModel = (mid) => {
       const lower = String(mid || '').toLowerCase();
-      return lower.includes('inpaint')
-        || lower.includes('3.5-medium')
-        || lower.includes('3-5-medium')
-        || lower.includes('sd-3.5-med');
+      if (lower.includes('vision') || lower.endsWith('-vl')) return false;
+      return /(gpt-image|dall-e|chatgpt-image|imagen|flux|seedream|-image\b|-image-|nano-banana|inpaint|3\.5-medium|3-5-medium)/.test(lower);
     };
     const imageModels = [];
     (modelsData.items || []).forEach(item => {
       (item.models || []).forEach(mid => {
-        if (_isInpaintModel(mid)) imageModels.push(mid);
+        if (_isImageModel(mid) && !imageModels.includes(mid)) imageModels.push(mid);
       });
     });
+    // Los de tus keys que generan imágenes (OpenRouter marca la salida de cada modelo).
+    try {
+      const im = await (await fetch('/api/gallery/image-models', { credentials: 'same-origin' })).json();
+      (im.models || []).forEach(m => { if (m && m.id && !imageModels.includes(m.id)) imageModels.push(m.id); });
+    } catch (_) {}
     sortModelIds(imageModels).forEach(mid => { const opt = document.createElement('option'); opt.value = mid; opt.textContent = mid; modelSel.appendChild(opt); });
-    // Hardcoded fallbacks shown as "(not detected)" so users know what to
-    // download/serve to enable inpaint here.
-    ['stable-diffusion-3.5-medium', 'stable-diffusion-inpainting'].forEach(mid => {
-      if (!imageModels.includes(mid)) { const opt = document.createElement('option'); opt.value = mid; opt.textContent = mid + ' (not detected)'; modelSel.appendChild(opt); }
-    });
   } catch (e) { console.warn('Failed to load models for image settings', e); }
   try {
     const settingsRes = await fetch('/api/auth/settings', { credentials: 'same-origin' });
     const settings = await settingsRes.json();
-    if (settings.image_model) modelSel.value = settings.image_model;
+    if (settings.image_model) {
+      // Si el guardado ya no está en la lista, mostrarlo igual (se usa el automático si no existe).
+      if (![...modelSel.options].some(o => o.value === settings.image_model)) {
+        const opt = document.createElement('option'); opt.value = settings.image_model;
+        opt.textContent = settings.image_model + ' (not found)'; modelSel.appendChild(opt);
+      }
+      modelSel.value = settings.image_model;
+    }
     if (settings.image_quality) qualSel.value = settings.image_quality;
     if (enabledToggle) enabledToggle.checked = settings.image_gen_enabled !== false;
   } catch (e) { console.warn('Failed to load settings', e); }

@@ -110,11 +110,11 @@ async def test_markdown_save_does_not_rename_then_delete_works(tmp_path):
     assert res["name"] == "test-skill", f"save renamed the skill to {res.get('name')!r}"
 
     # The skill still lives under its original id (the edit DID apply).
-    names = {s.get("name") for s in sm.load(owner="alice")}
+    names = {s.get("name") for s in sm.load(owner="alice") if not s.get("builtin")}  # sin las integradas
     assert names == {"test-skill"}, names
     descriptions = {s.get("description") for s in sm.load(owner="alice")}
     assert "edited description" in descriptions  # the content edit took effect
 
     # The crux of #1333: deleting by the original id now succeeds.
     assert await delete(_request("alice"), "test-skill") == {"ok": True}
-    assert sm.load(owner="alice") == []
+    assert [s for s in sm.load(owner="alice") if not s.get("builtin")] == []

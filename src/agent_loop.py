@@ -285,6 +285,13 @@ Suggest changes with explanations (for review/feedback requests).""",
 ```
 Generate an image. Line 1 = description, line 2 = model name, line 3 = WxH (e.g. 1024x1024), line 4 = quality.""",
 
+    "edit_image": """\
+```edit_image
+<what to change>
+<images: attachment ids, /api/generated-image/... URLs, or last>
+```
+Edit an existing image (attached by the user or generated before). Line 2 defaults to the most recent image in this chat.""",
+
     "chat_with_model": "- ```chat_with_model``` — Ask a DIFFERENT AI model and relay its answer. Line 1 = model name (or 'model@endpoint'), rest = your message. Use when the user says 'ask <model>', 'what does <model> think', or wants to compare/their answer from another model.",
     "ask_teacher": "- ```ask_teacher``` — Escalate a hard question to a more capable model. Line 1 = model name or 'auto', rest = the question. Use when stuck or need expert knowledge.",
     "list_models": "- ```list_models``` — Show all available AI models across all endpoints. Use when user asks what models are available.",
@@ -1053,7 +1060,7 @@ def _build_base_prompt(
 
     disabled = set(disabled_tools or [])
     if not get_setting("image_gen_enabled", True):
-        disabled.add("generate_image")
+        disabled.update({"generate_image", "edit_image"})
 
     if relevant_tools is not None:
         # RAG mode: include always-available + retrieved + admin (if needed)

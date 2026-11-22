@@ -332,6 +332,16 @@ def setup_gallery_routes() -> APIRouter:
             return {"error": str(e)}
 
     # ---- GET /api/gallery/tags ----
+    @router.get("/api/gallery/image-models")
+    async def image_models(request: Request):
+        """RUFFS: modelos que generan imágenes con las keys de la persona
+        (para Ajustes → Image Generation)."""
+        import asyncio
+        from src.image_gen import available_models
+        user = get_current_user(request)
+        models = await asyncio.to_thread(available_models, user)
+        return {"models": models}
+
     @router.get("/api/gallery/tags")
     async def gallery_tags(request: Request) -> Dict[str, Any]:
         """Return distinct tags across all active gallery images."""
